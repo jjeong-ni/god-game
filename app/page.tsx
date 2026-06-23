@@ -365,7 +365,7 @@ function seededRandom(seed: number) {
   };
 }
 
-function selectBySaju(year: number, month: number, day: number): {
+function selectBySaju(year: number, month: number, day: number, hourOh: Ohaeng | null = null): {
   ings: Ingredient[];
   zodiac: { name: string; emoji: string };
   dominantOh: Ohaeng;
@@ -376,12 +376,13 @@ function selectBySaju(year: number, month: number, day: number): {
   const seed = year * 10000 + month * 100 + day;
   const rand = seededRandom(seed);
 
-  // 사주 4기둥 오행 집계: 년간, 년지, 월지, 일간
+  // 사주 4~5기둥 오행 집계: 년간, 년지, 월지, 일간, (시지)
   const ohScores: Record<Ohaeng, number> = { wood: 0, fire: 0, earth: 0, metal: 0, water: 0 };
   ohScores[YEAR_STEM_OH[((year % 10) + 10) % 10]]++;
   ohScores[YEAR_BRANCH_OH[zodiacIdx]]++;
   ohScores[MONTH_OH[month - 1]]++;
   ohScores[getDayOhaeng(day)]++;
+  if (hourOh) ohScores[hourOh]++;
 
   // 오행 순위 (동점이면 알파벳 순으로 안정적 정렬)
   const ohRanked = (Object.entries(ohScores) as [Ohaeng, number][])
@@ -432,6 +433,16 @@ function buildPouringSequence(base: Ingredient[]): { ing: Ingredient; isAccident
   }
   return seq;
 }
+
+// 시주(時柱) — 태어난 시간대별 지지(地支) 오행
+const TIME_SLOTS: { label: string; range: string; emoji: string; oh: Ohaeng }[] = [
+  { label: '자정·새벽', range: '밤 11시 ~ 새벽 3시',  emoji: '🌙', oh: 'water' },
+  { label: '새벽·아침', range: '새벽 3시 ~ 오전 7시', emoji: '🌅', oh: 'wood'  },
+  { label: '오전',       range: '오전 7시 ~ 오전 11시',emoji: '☀️', oh: 'fire'  },
+  { label: '낮',         range: '오전 11시 ~ 오후 3시',emoji: '🌞', oh: 'fire'  },
+  { label: '오후',       range: '오후 3시 ~ 오후 7시', emoji: '🌤️', oh: 'metal' },
+  { label: '저녁·밤',   range: '오후 7시 ~ 밤 11시',  emoji: '🌃', oh: 'earth' },
+];
 
 const PARTICLE_EMOJIS = ['✨', '💥', '🌟', '⚡', '🔥', '💨', '🫧', '💫'];
 const STARS = Array.from({ length: 20 }, (_, i) => ({
@@ -495,6 +506,7 @@ export default function GodGame() {
   const [showResult, setShowResult] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [dominantOh, setDominantOh] = useState<Ohaeng | null>(null);
+  const [hourOh, setHourOh] = useState<Ohaeng | null>(null);
   const [liveStats, setLiveStats] = useState<Record<string, number>>(TYPE_STATS);
   const [liveTotalPlayers, setLiveTotalPlayers] = useState(TOTAL_PLAYERS);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -550,22 +562,31 @@ export default function GodGame() {
     setNamingStep(3);
   }, []);
 
-  // 생년월일 확인 → 사주 오행 계산 → step4
+  // 생년월일 확인 → step4 (시주 선택)
   const handleDateSubmit = useCallback(() => {
     const y = parseInt(yearInput);
     const m = parseInt(monthInput);
     const d = parseInt(dayInput);
     if (!y || !m || !d || m < 1 || m > 12 || d < 1 || d > 31 || y < 1900 || y > 2030) return;
-    const { ings, zodiac, dominantOh: oh } = selectBySaju(y, m, d);
-    setZodiacInfo(zodiac);
-    setSaJuIngs(ings);
-    setDominantOh(oh);
     setNamingStep(4);
   }, [yearInput, monthInput, dayInput]);
 
-  // 네 → step5
-  const handleYes = useCallback(() => {
+  // 시주 선택 → 사주 계산 → step5
+  const handleTimeSubmit = useCallback((oh: Ohaeng | null) => {
+    const y = parseInt(yearInput);
+    const m = parseInt(monthInput);
+    const d = parseInt(dayInput);
+    setHourOh(oh);
+    const { ings, zodiac, dominantOh: doh } = selectBySaju(y, m, d, oh);
+    setZodiacInfo(zodiac);
+    setSaJuIngs(ings);
+    setDominantOh(doh);
     setNamingStep(5);
+  }, [yearInput, monthInput, dayInput]);
+
+  // 네 → step6
+  const handleYes = useCallback(() => {
+    setNamingStep(6);
   }, []);
 
   // 아니오 → step1 (이름부터 다시)
@@ -578,6 +599,7 @@ export default function GodGame() {
     setZodiacInfo(null);
     setSaJuIngs([]);
     setDominantOh(null);
+    setHourOh(null);
     setNamingStep(1);
   }, []);
 
@@ -678,7 +700,7 @@ export default function GodGame() {
     setParticles([]); setShowResult(false); setShowStats(false); setBouncingId(null);
     setAccidentals(new Set()); setEmptyBottles(new Set());
     hasRecordedRef.current = false;
-    setDominantOh(null);
+    setDominantOh(null); setHourOh(null);
     setLiveStats(TYPE_STATS); setLiveTotalPlayers(TOTAL_PLAYERS); setStatsLoading(false);
     setGodSpeech(''); setShowSpeech(false); setAccidentFlash(null);
     setPhase('intro');
@@ -839,8 +861,40 @@ export default function GodGame() {
             </div>
           )}
 
-          {/* step 4: 확인 (네/아니오 선택) */}
-          {namingStep === 4 && zodiacInfo && (
+          {/* step 4: 태어난 시간 선택 */}
+          {namingStep === 4 && (
+            <div style={css.rpgBox}>
+              <div style={css.rpgSpeaker}>신 🌩️</div>
+              <p style={css.rpgLine}>마지막으로...</p>
+              <p style={css.rpgLine}><b>{userName}</b>는 언제쯤 태어났느냐?</p>
+              <p style={{ ...css.rpgLine, fontSize: 13, color: 'rgba(255,255,255,0.45)' } as CSSProperties}>
+                시주(時柱)까지 보면 더 정확해지느니라
+              </p>
+              <div style={css.timeGrid}>
+                {TIME_SLOTS.map(slot => (
+                  <button
+                    key={slot.oh + slot.label}
+                    style={{
+                      ...css.timeBtn,
+                      borderColor: OHAENG_COLOR[slot.oh],
+                      color: OHAENG_COLOR[slot.oh],
+                    }}
+                    onClick={() => handleTimeSubmit(slot.oh)}
+                  >
+                    <span style={{ fontSize: 22 }}>{slot.emoji}</span>
+                    <span style={{ fontWeight: 800, fontSize: 13 }}>{slot.label}</span>
+                    <span style={{ fontSize: 11, opacity: 0.7 }}>{slot.range}</span>
+                  </button>
+                ))}
+              </div>
+              <button style={css.skipTimeBtn} onClick={() => handleTimeSubmit(null)}>
+                잘 모르겠어 (건너뛰기)
+              </button>
+            </div>
+          )}
+
+          {/* step 5: 확인 (네/아니오 선택) */}
+          {namingStep === 5 && zodiacInfo && (
             <div style={css.rpgBox}>
               <div style={css.rpgSpeaker}>신 🌩️</div>
               <p style={css.rpgLine}>너의 이름은... <b>{userName}</b>....</p>
@@ -866,8 +920,8 @@ export default function GodGame() {
             </div>
           )}
 
-          {/* step 5: 운명 발견 (클릭 진행) */}
-          {namingStep === 5 && zodiacInfo && (
+          {/* step 6: 운명 발견 (클릭 진행) */}
+          {namingStep === 6 && zodiacInfo && (
             <div style={css.rpgBox}>
               <div style={css.rpgSpeaker}>신 🌩️</div>
               <p style={css.rpgLine}>
@@ -1304,6 +1358,24 @@ const css: Record<string, CSSProperties> = {
     borderRadius: 12, padding: '14px 0', color: '#fff',
     fontSize: 15, fontWeight: 800, cursor: 'pointer',
     boxShadow: '3px 3px 0px rgba(0,0,0,0.3)',
+  },
+
+  // 시주 선택
+  timeGrid: {
+    display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 14,
+  },
+  timeBtn: {
+    display: 'flex', flexDirection: 'column' as CSSProperties['flexDirection'],
+    alignItems: 'center', gap: 2, padding: '10px 8px',
+    background: 'rgba(255,255,255,0.05)', border: '1.5px solid',
+    borderRadius: 12, cursor: 'pointer',
+    transition: 'background 0.15s',
+  },
+  skipTimeBtn: {
+    marginTop: 12, width: '100%', background: 'transparent',
+    border: '1px solid rgba(255,255,255,0.2)', borderRadius: 10,
+    padding: '10px 0', color: 'rgba(255,255,255,0.35)',
+    fontSize: 13, cursor: 'pointer',
   },
 
   // 생년월일 입력 전용
