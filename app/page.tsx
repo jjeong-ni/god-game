@@ -316,13 +316,22 @@ const YEAR_BRANCH_OH: Ohaeng[] = ['metal','metal','earth','water','water','earth
 // 1=丑(土), 2=寅(木), 3=卯(木), 4=辰(土), 5=巳(火), 6=午(火), 7=未(土), 8=申(金), 9=酉(金), 10=戌(土), 11=亥(水), 12=子(水)
 const MONTH_OH: Ohaeng[] = ['earth','wood','wood','earth','fire','fire','earth','metal','metal','earth','water','water'];
 
-// 일(日) → 일간(日干) 오행 근사 (6일 단위 순환: 木→火→土→金→水)
-function getDayOhaeng(day: number): Ohaeng {
-  if (day <= 6)  return 'wood';
-  if (day <= 12) return 'fire';
-  if (day <= 18) return 'earth';
-  if (day <= 24) return 'metal';
-  return 'water';
+// 율리우스 적일수(Julian Day Number) — 정확한 일간(日干) 계산용
+function julianDayNumber(year: number, month: number, day: number): number {
+  const a = Math.floor((14 - month) / 12);
+  const y = year + 4800 - a;
+  const m = month + 12 * a - 3;
+  return day + Math.floor((153 * m + 2) / 5) + 365 * y + Math.floor(y / 4) - Math.floor(y / 100) + Math.floor(y / 400) - 32045;
+}
+// 기준: 2023-01-01 = 甲子日 (60갑자 위치 0번)
+const JDN_GABJIA = 2459946;
+
+// 일간(日干) 오행 — 60갑자 천간 기준 정확 계산
+// 甲乙=木, 丙丁=火, 戊己=土, 庚辛=金, 壬癸=水
+function getDayOhaeng(year: number, month: number, day: number): Ohaeng {
+  const pos = ((julianDayNumber(year, month, day) - JDN_GABJIA) % 60 + 60) % 60;
+  const DAY_STEM_OH: Ohaeng[] = ['wood','wood','fire','fire','earth','earth','metal','metal','water','water'];
+  return DAY_STEM_OH[pos % 10];
 }
 
 // 재료 → 오행 배속(配屬) — 명리학적 특성에 따라
@@ -354,6 +363,100 @@ const OHAENG_COLOR: Record<Ohaeng, string> = {
   wood: '#5CB85C', fire: '#FF6B2F', earth: '#F5A83C', metal: '#A0B8FF', water: '#5BB8FF',
 };
 
+// ── 재료 명리학 배속 설명 ──
+const ING_TOOLTIP: Record<string, string> = {
+  sleep:     '水(수) — 깊은 밤처럼 고요하고 내면 지향적. 수면은 陰中之陰의 상태.',
+  food:      '火(화) — 왕성한 소화력과 욕구. 불꽃처럼 타오르는 식욕의 기(氣).',
+  phone:     '金(금) — 정밀한 기술과 집중력. 금속처럼 날카롭고 정확한 디지털 세계.',
+  emotional: '木(목) — 봄나무처럼 감성과 인자함이 넘침. 성장과 생명력의 에너지.',
+  stubborn:  '土(토) — 대지처럼 굳건하고 변하지 않음. 안정을 추구하는 고집.',
+  overthink: '土(토) — 토는 신중함의 기운. 모든 걸 담으려다 생각이 무거워짐.',
+  talkative: '木(목) — 나무가 가지를 뻗듯 활발히 퍼져나가는 사교의 기운.',
+  gaming:    '金(금) — 쇠처럼 집중하고 갈고닦는 기술 지향. 집념의 에너지.',
+  night:     '水(수) — 水는 陰의 기운. 밤이 깊을수록 수기(水氣)가 왕성해짐.',
+  perfect:   '金(금) — 금은 예리하고 결벽증이 있음. 흠 없이 깎아낸 금속.',
+  broke:     '土(토) — 토는 재물(財)의 흐름과 연결. 土가 약하면 돈이 흘러나감.',
+  coffee:    '火(화) — 커피의 자극과 열기는 火의 기운. 활력을 불어넣는 에너지.',
+  laugh:     '木(목) — 봄의 생동감. 목기(木氣)는 밝고 양기(陽氣)가 넘쳐흐름.',
+  clumsy:    '土(토) — 土가 과하면 묵직해서 몸이 둔해짐. 땅 기운 과부하.',
+  fitness:   '火(화) — 운동은 火의 활동 에너지. 심장과 체온을 높이는 양기(陽氣).',
+  sensitive: '水(수) — 水는 智慧와 감지력. 물처럼 모든 것을 감지하는 능력.',
+};
+
+// ── 오행 궁합(相生·相剋) ──
+const OH_SHENG: Record<Ohaeng, Ohaeng> = {
+  wood: 'fire', fire: 'earth', earth: 'metal', metal: 'water', water: 'wood',
+};
+const OH_KE: Record<Ohaeng, Ohaeng> = {
+  wood: 'earth', earth: 'water', water: 'fire', fire: 'metal', metal: 'wood',
+};
+interface CompatResult { score: number; relation: string; emoji: string; title: string; desc: string }
+
+function getCompat(myOh: Ohaeng, theirOh: Ohaeng): CompatResult {
+  if (myOh === theirOh) return {
+    score: 65, relation: '비화(比和)', emoji: '🤝', title: '동기상구 — 통하는 사이',
+    desc: '같은 오행끼리라 말 안 해도 서로 이해. 너무 비슷해서 가끔 답답할 수도. 경쟁보단 협력이 맞는 조합.',
+  };
+  if (OH_SHENG[myOh] === theirOh) return {
+    score: 87, relation: '상생(我生他)', emoji: '💕', title: '내가 상대를 키워주는 사이',
+    desc: '내가 상대를 성장시켜 주는 조합. 베푸는 게 자연스럽고 상대는 의지함. 따뜻하지만 가끔 지칠 수 있어.',
+  };
+  if (OH_SHENG[theirOh] === myOh) return {
+    score: 83, relation: '상생(他生我)', emoji: '💕', title: '상대가 나를 돌봐주는 사이',
+    desc: '상대가 나를 성장시켜 주는 조합. 든든한 파트너. 받는 만큼 감사함을 충분히 표현해 줘.',
+  };
+  if (OH_KE[myOh] === theirOh) return {
+    score: 42, relation: '상극(我克他)', emoji: '⚡', title: '내가 상대를 제압하는 관계',
+    desc: '나도 모르게 상대를 압박하는 기운. 의도는 없어도 상대가 부담스러울 수 있어. 배려를 의식적으로 더 해보자.',
+  };
+  return {
+    score: 45, relation: '상극(他克我)', emoji: '⚡', title: '상대가 나를 제압하는 관계',
+    desc: '상대 기운이 나를 답답하게 만들기도. 이 긴장감이 나를 단련시키는 면도 있어. 이겨내면 크게 성장해.',
+  };
+}
+
+// ── 오행 레이더 차트 ──
+const RADAR_ORDER: Ohaeng[] = ['wood', 'fire', 'earth', 'metal', 'water'];
+const RADAR_LABELS = ['목(木)🌳', '화(火)🔥', '토(土)🌏', '금(金)⚙️', '수(水)💧'];
+const RADAR_CX = 110, RADAR_CY = 105, RADAR_R = 72;
+const RADAR_ANGLES = RADAR_ORDER.map((_, i) => (i * 72 - 90) * (Math.PI / 180));
+
+function OhaengRadar({ scores }: { scores: Record<Ohaeng, number> }) {
+  const maxScore = Math.max(...Object.values(scores), 1);
+  const bgPts = (ratio: number) =>
+    RADAR_ANGLES.map(a => `${RADAR_CX + Math.cos(a) * ratio * RADAR_R},${RADAR_CY + Math.sin(a) * ratio * RADAR_R}`).join(' ');
+  const scorePts = RADAR_ANGLES.map((a, i) => {
+    const v = (scores[RADAR_ORDER[i]] / maxScore) * RADAR_R;
+    return `${RADAR_CX + Math.cos(a) * v},${RADAR_CY + Math.sin(a) * v}`;
+  }).join(' ');
+  return (
+    <svg width={220} height={210} viewBox="0 0 220 210">
+      {[0.25, 0.5, 0.75, 1].map(ratio => (
+        <polygon key={ratio} points={bgPts(ratio)} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="1"/>
+      ))}
+      {RADAR_ANGLES.map((a, i) => (
+        <line key={i} x1={RADAR_CX} y1={RADAR_CY}
+          x2={RADAR_CX + Math.cos(a) * RADAR_R} y2={RADAR_CY + Math.sin(a) * RADAR_R}
+          stroke="rgba(255,255,255,0.1)" strokeWidth="1"/>
+      ))}
+      <polygon points={scorePts} fill="rgba(155,127,224,0.28)" stroke="#9B7FE0" strokeWidth="2"/>
+      {RADAR_ORDER.map((oh, i) => {
+        const v = (scores[oh] / maxScore) * RADAR_R;
+        return <circle key={oh} cx={RADAR_CX + Math.cos(RADAR_ANGLES[i]) * v} cy={RADAR_CY + Math.sin(RADAR_ANGLES[i]) * v} r={4} fill={OHAENG_COLOR[oh]}/>;
+      })}
+      {RADAR_LABELS.map((label, i) => (
+        <text key={i}
+          x={RADAR_CX + Math.cos(RADAR_ANGLES[i]) * (RADAR_R + 20)}
+          y={RADAR_CY + Math.sin(RADAR_ANGLES[i]) * (RADAR_R + 20)}
+          textAnchor="middle" dominantBaseline="middle"
+          fill={OHAENG_COLOR[RADAR_ORDER[i]]} fontSize="11" fontWeight="700">
+          {label}
+        </text>
+      ))}
+    </svg>
+  );
+}
+
 function seededRandom(seed: number) {
   let s = seed ^ 0x1A2B3C4D;
   return () => {
@@ -381,7 +484,7 @@ function selectBySaju(year: number, month: number, day: number, hourOh: Ohaeng |
   ohScores[YEAR_STEM_OH[((year % 10) + 10) % 10]]++;
   ohScores[YEAR_BRANCH_OH[zodiacIdx]]++;
   ohScores[MONTH_OH[month - 1]]++;
-  ohScores[getDayOhaeng(day)]++;
+  ohScores[getDayOhaeng(year, month, day)]++;
   if (hourOh) ohScores[hourOh]++;
 
   // 오행 순위 (동점이면 알파벳 순으로 안정적 정렬)
@@ -507,6 +610,14 @@ export default function GodGame() {
   const [showStats, setShowStats] = useState(false);
   const [dominantOh, setDominantOh] = useState<Ohaeng | null>(null);
   const [hourOh, setHourOh] = useState<Ohaeng | null>(null);
+  const [ohScores, setOhScores] = useState<Record<Ohaeng, number> | null>(null);
+  const [tooltipIngId, setTooltipIngId] = useState<string | null>(null);
+  const [showCompat, setShowCompat] = useState(false);
+  const [compatYear, setCompatYear] = useState('');
+  const [compatMonth, setCompatMonth] = useState('');
+  const [compatDay, setCompatDay] = useState('');
+  const [compatResult, setCompatResult] = useState<CompatResult | null>(null);
+  const [compatZodiac, setCompatZodiac] = useState<{ name: string; emoji: string; oh: Ohaeng } | null>(null);
   const [liveStats, setLiveStats] = useState<Record<string, number>>(TYPE_STATS);
   const [liveTotalPlayers, setLiveTotalPlayers] = useState(TOTAL_PLAYERS);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -595,10 +706,11 @@ export default function GodGame() {
     const m = parseInt(monthInput);
     const d = parseInt(dayInput);
     setHourOh(oh);
-    const { ings, zodiac, dominantOh: doh } = selectBySaju(y, m, d, oh);
+    const { ings, zodiac, dominantOh: doh, ohScores: scores } = selectBySaju(y, m, d, oh);
     setZodiacInfo(zodiac);
     setSaJuIngs(ings);
     setDominantOh(doh);
+    setOhScores(scores);
     setNamingStep(5);
   }, [yearInput, monthInput, dayInput]);
 
@@ -718,7 +830,10 @@ export default function GodGame() {
     setParticles([]); setShowResult(false); setShowStats(false); setBouncingId(null);
     setAccidentals(new Set()); setEmptyBottles(new Set());
     hasRecordedRef.current = false;
-    setDominantOh(null); setHourOh(null);
+    setDominantOh(null); setHourOh(null); setOhScores(null);
+    setTooltipIngId(null); setShowCompat(false);
+    setCompatYear(''); setCompatMonth(''); setCompatDay('');
+    setCompatResult(null); setCompatZodiac(null);
     setLiveStats(TYPE_STATS); setLiveTotalPlayers(TOTAL_PLAYERS); setStatsLoading(false);
     setGodSpeech(''); setShowSpeech(false); setAccidentFlash(null);
     setLinkCopied(false);
@@ -745,6 +860,17 @@ export default function GodGame() {
       }
     } catch { /* cancel */ }
   }, [selected, userName, accidentals, emptyBottles]);
+
+  const handleCompatCalc = useCallback(() => {
+    if (!dominantOh) return;
+    const cy2 = parseInt(compatYear);
+    const cm = parseInt(compatMonth);
+    const cd = parseInt(compatDay);
+    if (!cy2 || !cm || !cd || cm < 1 || cm > 12 || cd < 1 || cd > 31 || cy2 < 1900 || cy2 > 2030) return;
+    const { zodiac, dominantOh: theirOh } = selectBySaju(cy2, cm, cd);
+    setCompatZodiac({ name: zodiac.name, emoji: zodiac.emoji, oh: theirOh });
+    setCompatResult(getCompat(dominantOh, theirOh));
+  }, [dominantOh, compatYear, compatMonth, compatDay]);
 
   const handleCopyLink = useCallback(() => {
     const b = `${yearInput}${monthInput.padStart(2, '0')}${dayInput.padStart(2, '0')}`;
@@ -1168,6 +1294,77 @@ export default function GodGame() {
         </div>
       )}
 
+      {/* ── 궁합 오버레이 ── */}
+      {showCompat && dominantOh && (
+        <div className="result-slide" style={css.statsOverlay}>
+          <div style={css.resultBg} />
+          <div style={css.statsScroll}>
+            <div style={css.statsContent}>
+              <div style={css.statsHeader}>
+                <button style={css.statsBackBtn} onClick={() => { setShowCompat(false); setCompatResult(null); setCompatYear(''); setCompatMonth(''); setCompatDay(''); }}>← 돌아가기</button>
+                <h2 style={css.statsTitle}>💕 오행 궁합</h2>
+                <p style={css.statsSubtitle}>상대의 생년월일을 입력해줘</p>
+              </div>
+
+              {/* 내 오행 */}
+              <div style={css.compatMyOh}>
+                <span style={{ fontSize: 28 }}>나</span>
+                <div style={{ color: OHAENG_COLOR[dominantOh], fontWeight: 800, fontSize: 18 }}>
+                  {OHAENG_KR[dominantOh]}
+                </div>
+              </div>
+
+              {/* 상대 입력 */}
+              <div style={css.rpgBox}>
+                <div style={css.rpgSpeaker}>상대방 생년월일</div>
+                <div style={css.dateRow}>
+                  <input style={css.dateInputYear} value={compatYear} onChange={e => setCompatYear(e.target.value)} placeholder="1990" maxLength={4} inputMode="numeric" autoFocus/>
+                  <span style={css.dateLabel}>년</span>
+                  <input style={css.dateInputShort} value={compatMonth} onChange={e => setCompatMonth(e.target.value)} placeholder="6" maxLength={2} inputMode="numeric"/>
+                  <span style={css.dateLabel}>월</span>
+                  <input style={css.dateInputShort} value={compatDay} onChange={e => setCompatDay(e.target.value)} placeholder="15" maxLength={2} inputMode="numeric"/>
+                  <span style={css.dateLabel}>일</span>
+                </div>
+                <div style={css.rpgAdvanceRow}>
+                  <button style={css.rpgBtn} onClick={handleCompatCalc}>궁합 보기 ▶</button>
+                </div>
+              </div>
+
+              {/* 결과 */}
+              {compatResult && compatZodiac && (
+                <div style={css.compatResultBox}>
+                  {/* VS */}
+                  <div style={css.compatVsRow}>
+                    <div style={css.compatOhBox}>
+                      <div style={{ color: OHAENG_COLOR[dominantOh], fontWeight: 800, fontSize: 16 }}>{OHAENG_KR[dominantOh]}</div>
+                      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>나</div>
+                    </div>
+                    <div style={css.compatVsEmoji}>{compatResult.emoji}</div>
+                    <div style={css.compatOhBox}>
+                      <div style={{ color: OHAENG_COLOR[compatZodiac.oh], fontWeight: 800, fontSize: 16 }}>{OHAENG_KR[compatZodiac.oh]}</div>
+                      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>{compatZodiac.emoji} {compatZodiac.name}띠</div>
+                    </div>
+                  </div>
+
+                  {/* 점수 바 */}
+                  <div style={css.compatScoreRow}>
+                    <span style={{ fontSize: 28, fontWeight: 900, color: compatResult.score >= 70 ? '#FF6B8A' : compatResult.score >= 60 ? '#FFD700' : '#9B7FE0' }}>
+                      {compatResult.score}점
+                    </span>
+                    <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', marginLeft: 8 }}>{compatResult.relation}</span>
+                  </div>
+                  <div style={css.compatBarWrap}>
+                    <div style={{ ...css.compatBar, width: `${compatResult.score}%`, background: compatResult.score >= 70 ? '#FF6B8A' : compatResult.score >= 60 ? '#FFD700' : '#9B7FE0' }}/>
+                  </div>
+                  <div style={css.compatTitle}>{compatResult.title}</div>
+                  <div style={css.compatDesc}>{compatResult.desc}</div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 플래시 */}
       {flashClass && <div className={flashClass} style={css.flash} />}
 
@@ -1209,17 +1406,29 @@ export default function GodGame() {
 
               <div style={css.section}>
                 <div style={css.sectionTitle}>📦 신이 넣은 재료</div>
+                <p style={{ ...css.sectionTitle, fontSize: 11, color: 'rgba(255,255,255,0.35)', fontWeight: 400, marginTop: -8, marginBottom: 6 } as CSSProperties}>
+                  재료를 누르면 명리학 배속 이유를 볼 수 있어
+                </p>
                 <div style={css.recapGrid}>
                   {selected.map(ing => (
-                    <div key={ing.id} style={{
-                      ...css.recapChip,
-                      ...(accidentals.has(ing.id) ? css.recapChipAcc : {}),
-                      ...(emptyBottles.has(ing.id) ? css.recapChipEmpty : {}),
-                    }}>
+                    <div key={ing.id}
+                      onClick={() => setTooltipIngId(tooltipIngId === ing.id ? null : ing.id)}
+                      style={{
+                        ...css.recapChip,
+                        ...(accidentals.has(ing.id) ? css.recapChipAcc : {}),
+                        ...(emptyBottles.has(ing.id) ? css.recapChipEmpty : {}),
+                        cursor: 'pointer', position: 'relative',
+                      }}>
                       <span style={{ fontSize: 20 }}>{ing.emoji}</span>
                       <span style={css.recapName}>{ing.name}</span>
                       {accidentals.has(ing.id) && !emptyBottles.has(ing.id) && <span style={css.accLabel}>실수</span>}
                       {emptyBottles.has(ing.id) && <span style={css.emptyLabel}>💧 한방울</span>}
+                      {tooltipIngId === ing.id && (
+                        <div style={css.ingTooltip}>
+                          <span style={{ color: OHAENG_COLOR[ING_OHAENG[ing.id]] }}>{OHAENG_KR[ING_OHAENG[ing.id]]}</span>
+                          <br/>{ING_TOOLTIP[ing.id]}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1237,6 +1446,23 @@ export default function GodGame() {
                   </div>
                 ))}
               </div>
+
+              {ohScores && (
+                <div style={css.section}>
+                  <div style={css.sectionTitle}>🔯 오행(五行) 레이더</div>
+                  <div style={{ display: 'flex', justifyContent: 'center' }}>
+                    <OhaengRadar scores={ohScores} />
+                  </div>
+                  <div style={css.radarLegend}>
+                    {(Object.entries(ohScores) as [Ohaeng, number][]).sort((a,b)=>b[1]-a[1]).map(([oh, v]) => (
+                      <div key={oh} style={css.radarLegendItem}>
+                        <span style={{ color: OHAENG_COLOR[oh], fontWeight: 700, fontSize: 12 }}>{OHAENG_KR[oh]}</span>
+                        <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginLeft: 4 }}>×{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div style={css.section}>
                 <div style={css.sectionTitle}>💬 이 조합은요...</div>
@@ -1256,6 +1482,9 @@ export default function GodGame() {
               </div>
               <button style={css.copyLinkBtn} onClick={handleCopyLink}>
                 {linkCopied ? '✅ 링크 복사됨!' : '🔗 결과 링크 복사'}
+              </button>
+              <button style={css.compatBtn} onClick={() => setShowCompat(true)}>
+                💕 궁합 보기 (오행 상생·상극)
               </button>
               <button style={css.statsBtn} onClick={() => setShowStats(true)}>
                 👥 나와 같은 유형 알아보기
@@ -1707,4 +1936,61 @@ const css: Record<string, CSSProperties> = {
     borderRadius: 10, padding: '2px 8px', whiteSpace: 'nowrap' as CSSProperties['whiteSpace'],
   },
   statsFooter: { fontSize: 11, color: 'rgba(255,255,255,0.22)', textAlign: 'center', marginTop: 20 },
+
+  // ── 재료 툴팁 ──
+  ingTooltip: {
+    position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%',
+    transform: 'translateX(-50%)',
+    background: '#1A0D38', border: '1.5px solid rgba(155,127,224,0.5)',
+    borderRadius: 10, padding: '8px 12px', fontSize: 11, lineHeight: 1.6,
+    color: 'rgba(255,255,255,0.85)', whiteSpace: 'normal' as CSSProperties['whiteSpace'],
+    zIndex: 50, minWidth: 200, maxWidth: 260, textAlign: 'left' as CSSProperties['textAlign'],
+    boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+  },
+
+  // ── 오행 레이더 ──
+  radarLegend: {
+    display: 'flex', flexWrap: 'wrap' as CSSProperties['flexWrap'], gap: 8,
+    justifyContent: 'center', marginTop: 4,
+  },
+  radarLegendItem: {
+    display: 'flex', alignItems: 'center',
+    background: 'rgba(255,255,255,0.05)', borderRadius: 8, padding: '4px 10px',
+  },
+
+  // ── 궁합 버튼 ──
+  compatBtn: {
+    width: '100%', background: 'rgba(255,107,138,0.12)', border: '1.5px solid rgba(255,107,138,0.4)',
+    borderRadius: 14, padding: '12px 0', color: '#FF6B8A', fontSize: 14,
+    fontWeight: 700, cursor: 'pointer', marginBottom: 8,
+  },
+
+  // ── 궁합 오버레이 ──
+  compatMyOh: {
+    display: 'flex', flexDirection: 'column' as CSSProperties['flexDirection'],
+    alignItems: 'center', gap: 4, marginBottom: 16,
+    background: 'rgba(255,255,255,0.05)', borderRadius: 14, padding: '12px',
+  },
+  compatResultBox: {
+    background: 'rgba(255,255,255,0.05)', border: '1.5px solid rgba(255,255,255,0.1)',
+    borderRadius: 18, padding: '20px 16px', marginTop: 20,
+    display: 'flex', flexDirection: 'column' as CSSProperties['flexDirection'], gap: 12,
+  },
+  compatVsRow: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-around',
+  },
+  compatOhBox: {
+    display: 'flex', flexDirection: 'column' as CSSProperties['flexDirection'],
+    alignItems: 'center', gap: 4,
+  },
+  compatVsEmoji: { fontSize: 32 },
+  compatScoreRow: {
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+  },
+  compatBarWrap: {
+    height: 10, background: 'rgba(255,255,255,0.08)', borderRadius: 5, overflow: 'hidden',
+  },
+  compatBar: { height: '100%', borderRadius: 5, transition: 'width 0.6s ease' },
+  compatTitle: { fontSize: 15, fontWeight: 800, color: '#fff', textAlign: 'center' as CSSProperties['textAlign'] },
+  compatDesc: { fontSize: 13, color: 'rgba(255,255,255,0.7)', lineHeight: 1.6, textAlign: 'center' as CSSProperties['textAlign'] },
 };
