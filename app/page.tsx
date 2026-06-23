@@ -84,10 +84,11 @@ function getPersonalityType(items: Ingredient[]) {
   const counts: Record<string, number> = {};
   items.forEach(i => { counts[i.category] = (counts[i.category] || 0) + 1; });
   const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  if (sorted.length >= 4 && sorted[0][1] === 1) return PERSONALITY_TYPES.find(p => p.id === 'chaotic')!;
-  const topCat = sorted[0]?.[0];
   const topCount = sorted[0]?.[1] ?? 0;
-  return PERSONALITY_TYPES.find(p => topCount >= 2 && p.dominant.includes(topCat))
+  // 모든 재료가 다른 카테고리일 때만 카오스
+  if (topCount === 1) return PERSONALITY_TYPES.find(p => p.id === 'chaotic')!;
+  const topCat = sorted[0][0];
+  return PERSONALITY_TYPES.find(p => p.dominant.includes(topCat))
     ?? PERSONALITY_TYPES.find(p => p.id === 'chaotic')!;
 }
 
@@ -285,35 +286,73 @@ async function generateShareImage(
   );
 }
 
-// ── 12지신 사주명리학 ──
+// ── 사주명리학(四柱命理學) 오행(五行) 시스템 ──
+type Ohaeng = 'wood' | 'fire' | 'earth' | 'metal' | 'water';
+
+// 12지신 — 년지(年支) 오행을 별도 배열로 관리
 const ZODIAC = [
-  { name: '원숭이', emoji: '🐒', primary: 'talkative' },
-  { name: '닭',     emoji: '🐓', primary: 'coffee' },
-  { name: '개',     emoji: '🐕', primary: 'laugh' },
-  { name: '돼지',   emoji: '🐷', primary: 'food' },
-  { name: '쥐',     emoji: '🐭', primary: 'night' },
-  { name: '소',     emoji: '🐄', primary: 'stubborn' },
-  { name: '호랑이', emoji: '🐯', primary: 'emotional' },
-  { name: '토끼',   emoji: '🐰', primary: 'sensitive' },
-  { name: '용',     emoji: '🐉', primary: 'overthink' },
-  { name: '뱀',     emoji: '🐍', primary: 'perfect' },
-  { name: '말',     emoji: '🐴', primary: 'fitness' },
-  { name: '양',     emoji: '🐑', primary: 'sleep' },
+  { name: '원숭이', emoji: '🐒' },  // year%12=0  申(金/metal)
+  { name: '닭',     emoji: '🐓' },  // year%12=1  酉(金/metal)
+  { name: '개',     emoji: '🐕' },  // year%12=2  戌(土/earth)
+  { name: '돼지',   emoji: '🐷' },  // year%12=3  亥(水/water)
+  { name: '쥐',     emoji: '🐭' },  // year%12=4  子(水/water)
+  { name: '소',     emoji: '🐄' },  // year%12=5  丑(土/earth)
+  { name: '호랑이', emoji: '🐯' },  // year%12=6  寅(木/wood)
+  { name: '토끼',   emoji: '🐰' },  // year%12=7  卯(木/wood)
+  { name: '용',     emoji: '🐉' },  // year%12=8  辰(土/earth)
+  { name: '뱀',     emoji: '🐍' },  // year%12=9  巳(火/fire)
+  { name: '말',     emoji: '🐴' },  // year%12=10 午(火/fire)
+  { name: '양',     emoji: '🐑' },  // year%12=11 未(土/earth)
 ] as const;
 
-const MONTH_ING: Record<number, string> = {
-  1: 'overthink', 2: 'emotional', 3: 'fitness',  4: 'sensitive',
-  5: 'perfect',   6: 'talkative', 7: 'gaming',   8: 'food',
-  9: 'stubborn',  10: 'broke',   11: 'night',    12: 'sleep',
+// 년도 끝자리(year%10) → 년간(年干) 오행
+// 0=庚(金), 1=辛(金), 2=壬(水), 3=癸(水), 4=甲(木), 5=乙(木), 6=丙(火), 7=丁(火), 8=戊(土), 9=己(土)
+const YEAR_STEM_OH: Ohaeng[] = ['metal','metal','water','water','wood','wood','fire','fire','earth','earth'];
+
+// year%12 → 년지(年支) 오행 (위 ZODIAC 순서와 일치)
+const YEAR_BRANCH_OH: Ohaeng[] = ['metal','metal','earth','water','water','earth','wood','wood','earth','fire','fire','earth'];
+
+// 월(1~12) → 월지(月支) 오행 (절기 기준 근사)
+// 1=丑(土), 2=寅(木), 3=卯(木), 4=辰(土), 5=巳(火), 6=午(火), 7=未(土), 8=申(金), 9=酉(金), 10=戌(土), 11=亥(水), 12=子(水)
+const MONTH_OH: Ohaeng[] = ['earth','wood','wood','earth','fire','fire','earth','metal','metal','earth','water','water'];
+
+// 일(日) → 일간(日干) 오행 근사 (6일 단위 순환: 木→火→土→金→水)
+function getDayOhaeng(day: number): Ohaeng {
+  if (day <= 6)  return 'wood';
+  if (day <= 12) return 'fire';
+  if (day <= 18) return 'earth';
+  if (day <= 24) return 'metal';
+  return 'water';
+}
+
+// 재료 → 오행 배속(配屬) — 명리학적 특성에 따라
+const ING_OHAENG: Record<string, Ohaeng> = {
+  sleep:     'water',  // 수면 — 水: 정적(靜的), 내면
+  food:      'fire',   // 먹방 — 火: 왕성한 식욕
+  phone:     'metal',  // 폰중독 — 金: 기술, 정밀
+  emotional: 'wood',   // 감수성 — 木: 인자함, 감성
+  stubborn:  'earth',  // 고집 — 土: 안정, 불변
+  overthink: 'earth',  // 생각과부하 — 土: 신중, 고집
+  talkative: 'wood',   // 수다쟁이 — 木: 사교, 생동감
+  gaming:    'metal',  // 게임 — 金: 집중, 기술
+  night:     'water',  // 야행성 — 水: 음(陰), 깊은 밤
+  perfect:   'metal',  // 완벽주의 — 金: 의리, 예리함
+  broke:     'earth',  // 텅장 — 土: 재물의 흐름
+  coffee:    'fire',   // 카페인 — 火: 자극, 활력
+  laugh:     'wood',   // 웃음보 — 木: 밝은 양기(陽氣)
+  clumsy:    'earth',  // 덜렁거림 — 土: 땅 기운 과다
+  fitness:   'fire',   // 운동귀신 — 火: 활동, 에너지
+  sensitive: 'water',  // 눈치레이더 — 水: 지(智), 감지력
 };
 
-function getDayIng(day: number): string {
-  if (day <= 7) return 'phone';
-  if (day <= 14) return 'clumsy';
-  if (day <= 21) return 'coffee';
-  if (day <= 28) return 'laugh';
-  return 'broke';
-}
+// 오행 표시용
+const OHAENG_KR: Record<Ohaeng, string> = {
+  wood:  '목(木) 🌳', fire:  '화(火) 🔥', earth: '토(土) 🌏',
+  metal: '금(金) ⚙️', water: '수(水) 💧',
+};
+const OHAENG_COLOR: Record<Ohaeng, string> = {
+  wood: '#5CB85C', fire: '#FF6B2F', earth: '#F5A83C', metal: '#A0B8FF', water: '#5BB8FF',
+};
 
 function seededRandom(seed: number) {
   let s = seed ^ 0x1A2B3C4D;
@@ -329,31 +368,49 @@ function seededRandom(seed: number) {
 function selectBySaju(year: number, month: number, day: number): {
   ings: Ingredient[];
   zodiac: { name: string; emoji: string };
+  dominantOh: Ohaeng;
+  ohScores: Record<Ohaeng, number>;
 } {
-  const zodiac = ZODIAC[((year % 12) + 12) % 12];
+  const zodiacIdx = ((year % 12) + 12) % 12;
+  const zodiac = ZODIAC[zodiacIdx];
   const seed = year * 10000 + month * 100 + day;
   const rand = seededRandom(seed);
 
-  // 년/월/일이 같은 재료로 매핑될 수 있으므로 중복 제거
-  const primaryIds = [...new Set([
-    zodiac.primary,
-    MONTH_ING[month] ?? 'sleep',
-    getDayIng(day),
-  ])];
-  const seen = new Set<string>(primaryIds);
-  const primary = primaryIds
-    .map(id => (INGREDIENTS as readonly Ingredient[]).find(i => i.id === id))
-    .filter((i): i is Ingredient => !!i);
+  // 사주 4기둥 오행 집계: 년간, 년지, 월지, 일간
+  const ohScores: Record<Ohaeng, number> = { wood: 0, fire: 0, earth: 0, metal: 0, water: 0 };
+  ohScores[YEAR_STEM_OH[((year % 10) + 10) % 10]]++;
+  ohScores[YEAR_BRANCH_OH[zodiacIdx]]++;
+  ohScores[MONTH_OH[month - 1]]++;
+  ohScores[getDayOhaeng(day)]++;
 
+  // 오행 순위 (동점이면 알파벳 순으로 안정적 정렬)
+  const ohRanked = (Object.entries(ohScores) as [Ohaeng, number][])
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const dominantOh = ohRanked[0][0];
+  const secondOh   = ohRanked[1][0];
+
+  const ingsByOh = (oh: Ohaeng) =>
+    (INGREDIENTS as readonly Ingredient[]).filter(i => ING_OHAENG[i.id] === oh);
+
+  const shufflePick = (arr: readonly Ingredient[], n: number): Ingredient[] => {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a.slice(0, n);
+  };
+
+  // 주도 오행 2개 + 보조 오행 1개 → 사주 성질이 결과에 강하게 반영
+  const core = [
+    ...shufflePick(ingsByOh(dominantOh), 2),
+    ...shufflePick(ingsByOh(secondOh), 1),
+  ];
+  const seen = new Set(core.map(i => i.id));
   const remaining = (INGREDIENTS as readonly Ingredient[]).filter(i => !seen.has(i.id));
-  const shuffled = [...remaining];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
+  const ings = [...core, ...shufflePick(remaining, MAX - core.length)].slice(0, MAX);
 
-  const ings = [...primary, ...shuffled.slice(0, MAX - primary.length)].slice(0, MAX);
-  return { ings, zodiac: { name: zodiac.name, emoji: zodiac.emoji } };
+  return { ings, zodiac: { name: zodiac.name, emoji: zodiac.emoji }, dominantOh, ohScores };
 }
 
 function buildPouringSequence(base: Ingredient[]): { ing: Ingredient; isAccident: boolean; isEmpty: boolean }[] {
@@ -437,6 +494,7 @@ export default function GodGame() {
   const [particles, setParticles] = useState<{ id: number; px: number; py: number; emoji: string }[]>([]);
   const [showResult, setShowResult] = useState(false);
   const [showStats, setShowStats] = useState(false);
+  const [dominantOh, setDominantOh] = useState<Ohaeng | null>(null);
   const [liveStats, setLiveStats] = useState<Record<string, number>>(TYPE_STATS);
   const [liveTotalPlayers, setLiveTotalPlayers] = useState(TOTAL_PLAYERS);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -492,15 +550,16 @@ export default function GodGame() {
     setNamingStep(3);
   }, []);
 
-  // 생년월일 확인 → 사주 계산 → step4
+  // 생년월일 확인 → 사주 오행 계산 → step4
   const handleDateSubmit = useCallback(() => {
     const y = parseInt(yearInput);
     const m = parseInt(monthInput);
     const d = parseInt(dayInput);
     if (!y || !m || !d || m < 1 || m > 12 || d < 1 || d > 31 || y < 1900 || y > 2030) return;
-    const { ings, zodiac } = selectBySaju(y, m, d);
+    const { ings, zodiac, dominantOh: oh } = selectBySaju(y, m, d);
     setZodiacInfo(zodiac);
     setSaJuIngs(ings);
+    setDominantOh(oh);
     setNamingStep(4);
   }, [yearInput, monthInput, dayInput]);
 
@@ -518,6 +577,7 @@ export default function GodGame() {
     setDayInput('');
     setZodiacInfo(null);
     setSaJuIngs([]);
+    setDominantOh(null);
     setNamingStep(1);
   }, []);
 
@@ -618,6 +678,7 @@ export default function GodGame() {
     setParticles([]); setShowResult(false); setShowStats(false); setBouncingId(null);
     setAccidentals(new Set()); setEmptyBottles(new Set());
     hasRecordedRef.current = false;
+    setDominantOh(null);
     setLiveStats(TYPE_STATS); setLiveTotalPlayers(TOTAL_PLAYERS); setStatsLoading(false);
     setGodSpeech(''); setShowSpeech(false); setAccidentFlash(null);
     setPhase('intro');
@@ -790,6 +851,11 @@ export default function GodGame() {
                 <span style={{ fontSize: 22 }}>{zodiacInfo.emoji}</span>{' '}
                 <b>{zodiacInfo.name}띠</b>이로구나...
               </p>
+              {dominantOh && (
+                <p style={{ ...css.rpgLine, marginTop: 6, color: OHAENG_COLOR[dominantOh] } as CSSProperties}>
+                  ✨ 사주를 보니... <b>{OHAENG_KR[dominantOh]}</b>의 기운이 강하구나...
+                </p>
+              )}
               <p style={{ ...css.rpgLine, color: '#FFD700', marginTop: 6 } as CSSProperties}>
                 맞나...? 🤔
               </p>
@@ -807,6 +873,11 @@ export default function GodGame() {
               <p style={css.rpgLine}>
                 ✨ <b>{zodiacInfo.emoji} {zodiacInfo.name}</b>의 기운을 읽겠노라...
               </p>
+              {dominantOh && (
+                <p style={{ ...css.rpgLine, color: OHAENG_COLOR[dominantOh] } as CSSProperties}>
+                  <b>{OHAENG_KR[dominantOh]}</b>의 기운이 강하여 재료가 보인다!
+                </p>
+              )}
               <p style={css.rpgLine}>운명의 재료가 보이기 시작했다!</p>
               <p style={{ ...css.rpgLine, color: '#FFD700', fontWeight: 800, marginTop: 4 } as CSSProperties}>
                 지금부터 신이 직접 만들어주겠노라!! ⚗️
