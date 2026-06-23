@@ -512,6 +512,7 @@ export default function GodGame() {
   const [statsLoading, setStatsLoading] = useState(false);
   const hasRecordedRef = useRef(false);
 
+  const [linkCopied, setLinkCopied] = useState(false);
   const [godSpeech, setGodSpeech] = useState('');
   const [showSpeech, setShowSpeech] = useState(false);
   const [accidentFlash, setAccidentFlash] = useState<string | null>(null);
@@ -529,6 +530,23 @@ export default function GodGame() {
     setGodSpeech(text);
     setShowSpeech(true);
     speechTimerRef.current = setTimeout(() => setShowSpeech(false), duration);
+  }, []);
+
+  // URL 파라미터로 생년월일 + 이름 자동 입력 (?b=19901215&n=지수)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const b = params.get('b');
+    const n = params.get('n');
+    if (b && /^\d{8}$/.test(b)) {
+      const y = b.slice(0, 4);
+      const m = b.slice(4, 6).replace(/^0/, '');
+      const d = b.slice(6, 8).replace(/^0/, '');
+      setYearInput(y);
+      setMonthInput(m);
+      setDayInput(d);
+    }
+    if (n) setNameInput(decodeURIComponent(n));
   }, []);
 
   useEffect(() => {
@@ -703,6 +721,7 @@ export default function GodGame() {
     setDominantOh(null); setHourOh(null);
     setLiveStats(TYPE_STATS); setLiveTotalPlayers(TOTAL_PLAYERS); setStatsLoading(false);
     setGodSpeech(''); setShowSpeech(false); setAccidentFlash(null);
+    setLinkCopied(false);
     setPhase('intro');
   }, [clearAllTimers]);
 
@@ -726,6 +745,19 @@ export default function GodGame() {
       }
     } catch { /* cancel */ }
   }, [selected, userName, accidentals, emptyBottles]);
+
+  const handleCopyLink = useCallback(() => {
+    const b = `${yearInput}${monthInput.padStart(2, '0')}${dayInput.padStart(2, '0')}`;
+    const n = encodeURIComponent(userName || '');
+    const url = `${window.location.origin}${window.location.pathname}?b=${b}&n=${n}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2500);
+    }).catch(() => {
+      // fallback: prompt
+      prompt('링크를 복사하세요:', url);
+    });
+  }, [yearInput, monthInput, dayInput, userName]);
 
   const fillPct = (selected.length / MAX) * 100;
   const personality = showResult ? getPersonalityType(selected) : null;
@@ -1219,9 +1251,12 @@ export default function GodGame() {
               </div>
 
               <div style={css.actionRow}>
-                <button style={css.shareBtn} onClick={handleShare}>📤 결과 공유하기</button>
+                <button style={css.shareBtn} onClick={handleShare}>📤 이미지 공유</button>
                 <button style={css.resetBtn} onClick={handleReset}>🔄 다시 하기</button>
               </div>
+              <button style={css.copyLinkBtn} onClick={handleCopyLink}>
+                {linkCopied ? '✅ 링크 복사됨!' : '🔗 결과 링크 복사'}
+              </button>
               <button style={css.statsBtn} onClick={() => setShowStats(true)}>
                 👥 나와 같은 유형 알아보기
               </button>
@@ -1612,10 +1647,15 @@ const css: Record<string, CSSProperties> = {
   },
   bottomTag: { fontSize: 11, color: 'rgba(255,255,255,0.28)', textAlign: 'center' },
 
+  copyLinkBtn: {
+    width: '100%', background: 'rgba(91,184,255,0.1)', border: '1.5px solid rgba(91,184,255,0.4)',
+    borderRadius: 14, padding: '12px 0', color: '#5BB8FF', fontSize: 14,
+    fontWeight: 700, cursor: 'pointer', marginBottom: 8, marginTop: 4,
+  },
   statsBtn: {
     width: '100%', background: 'rgba(155,127,224,0.12)', border: '1.5px solid rgba(155,127,224,0.4)',
     borderRadius: 14, padding: '14px 0', color: '#C4ADFF', fontSize: 14,
-    fontWeight: 700, cursor: 'pointer', marginBottom: 12, marginTop: 4,
+    fontWeight: 700, cursor: 'pointer', marginBottom: 12, marginTop: 0,
   },
 
   // ── 통계 오버레이 ──
