@@ -66,6 +66,20 @@ const PERSONALITY_TYPES = [
     tags: ['#반전매력', '#예측불가', '#나도나를모름'] },
 ];
 
+// 유형별 참여 통계 (사주 기반 시뮬레이션)
+const TYPE_STATS: Record<string, number> = {
+  digital:   24,
+  thinker:   19,
+  sleepy:    15,
+  emotional: 13,
+  foodie:    10,
+  social:     8,
+  daily:      6,
+  energy:     3,
+  chaotic:    2,
+};
+const TOTAL_PLAYERS = 14293;
+
 function getPersonalityType(items: Ingredient[]) {
   const counts: Record<string, number> = {};
   items.forEach(i => { counts[i.category] = (counts[i.category] || 0) + 1; });
@@ -236,6 +250,7 @@ export default function GodGame() {
   const [bouncingId, setBouncingId] = useState<string | null>(null);
   const [particles, setParticles] = useState<{ id: number; px: number; py: number; emoji: string }[]>([]);
   const [showResult, setShowResult] = useState(false);
+  const [showStats, setShowStats] = useState(false);
 
   const [godSpeech, setGodSpeech] = useState('');
   const [showSpeech, setShowSpeech] = useState(false);
@@ -398,7 +413,7 @@ export default function GodGame() {
     setYearInput(''); setMonthInput(''); setDayInput('');
     setZodiacInfo(null); setSaJuIngs([]);
     setGodSvgType('idle'); setGodClass(''); setBeakerClass(''); setFlashClass('');
-    setParticles([]); setShowResult(false); setBouncingId(null);
+    setParticles([]); setShowResult(false); setShowStats(false); setBouncingId(null);
     setAccidentals(new Set()); setEmptyBottles(new Set());
     setGodSpeech(''); setShowSpeech(false); setAccidentFlash(null);
     setPhase('intro');
@@ -734,6 +749,67 @@ export default function GodGame() {
         </div>
       )}
 
+      {/* ── 통계 오버레이 ── */}
+      {showStats && personality && (
+        <div className="result-slide" style={css.statsOverlay}>
+          <div style={css.resultBg} />
+          <div style={css.statsScroll}>
+            <div style={css.statsContent}>
+              <div style={css.statsHeader}>
+                <button style={css.statsBackBtn} onClick={() => setShowStats(false)}>← 돌아가기</button>
+                <h2 style={css.statsTitle}>🏆 유형 분포</h2>
+                <p style={css.statsSubtitle}>총 {TOTAL_PLAYERS.toLocaleString()}명 참여</p>
+              </div>
+
+              {/* 내 유형 하이라이트 */}
+              <div style={css.myTypeCard}>
+                <span style={css.myTypeEmoji}>{personality.emoji}</span>
+                <div>
+                  <div style={css.myTypeTitle}>{personality.title}</div>
+                  <div style={css.myTypeRank}>
+                    전체의 {TYPE_STATS[personality.id] ?? 0}% ·{' '}
+                    {[...PERSONALITY_TYPES]
+                      .sort((a, b) => (TYPE_STATS[b.id] ?? 0) - (TYPE_STATS[a.id] ?? 0))
+                      .findIndex(p => p.id === personality.id) + 1}위
+                  </div>
+                </div>
+              </div>
+
+              {/* 전체 유형 리스트 */}
+              <div style={css.statsListWrapper}>
+                {[...PERSONALITY_TYPES]
+                  .sort((a, b) => (TYPE_STATS[b.id] ?? 0) - (TYPE_STATS[a.id] ?? 0))
+                  .map((type, rank) => {
+                    const pct = TYPE_STATS[type.id] ?? 0;
+                    const isMe = type.id === personality.id;
+                    return (
+                      <div key={type.id} style={{ ...css.statsRow, ...(isMe ? css.statsRowMe : {}) }}>
+                        <span style={css.statsRank}>{rank + 1}</span>
+                        <span style={css.statsTypeEmoji}>{type.emoji}</span>
+                        <div style={css.statsInfo}>
+                          <div style={css.statsTypeName}>{type.title}</div>
+                          <div style={css.statsBarWrap}>
+                            <div style={{
+                              ...css.statsBar,
+                              width: `${pct}%`,
+                              background: isMe ? '#9B7FE0' : 'rgba(155,127,224,0.4)',
+                            }} />
+                          </div>
+                        </div>
+                        <span style={css.statsPct}>{pct}%</span>
+                        {isMe && <span style={css.statsMeBadge}>나</span>}
+                      </div>
+                    );
+                  })
+                }
+              </div>
+
+              <p style={css.statsFooter}>* 사주명리학 기반 시뮬레이션 데이터</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 플래시 */}
       {flashClass && <div className={flashClass} style={css.flash} />}
 
@@ -820,6 +896,9 @@ export default function GodGame() {
                 <button style={css.shareBtn} onClick={handleShare}>📤 결과 공유하기</button>
                 <button style={css.resetBtn} onClick={handleReset}>🔄 다시 하기</button>
               </div>
+              <button style={css.statsBtn} onClick={() => setShowStats(true)}>
+                👥 나와 같은 유형 알아보기
+              </button>
               <div style={css.bottomTag}>#신이나를만들때 #신이{displayName}을만들때</div>
             </div>
           </div>
@@ -1188,4 +1267,60 @@ const css: Record<string, CSSProperties> = {
     padding: '14px 0', color: '#C084FC', fontSize: 14, fontWeight: 700, cursor: 'pointer',
   },
   bottomTag: { fontSize: 11, color: 'rgba(255,255,255,0.28)', textAlign: 'center' },
+
+  statsBtn: {
+    width: '100%', background: 'rgba(155,127,224,0.12)', border: '1.5px solid rgba(155,127,224,0.4)',
+    borderRadius: 14, padding: '14px 0', color: '#C4ADFF', fontSize: 14,
+    fontWeight: 700, cursor: 'pointer', marginBottom: 12, marginTop: 4,
+  },
+
+  // ── 통계 오버레이 ──
+  statsOverlay: { position: 'fixed', inset: 0, zIndex: 110, display: 'flex', flexDirection: 'column' },
+  statsScroll: { position: 'relative', zIndex: 1, overflowY: 'auto', flex: 1, display: 'flex', justifyContent: 'center' },
+  statsContent: { width: '100%', maxWidth: 480, padding: '20px 20px 60px', display: 'flex', flexDirection: 'column' },
+
+  statsHeader: {
+    display: 'flex', flexDirection: 'column', alignItems: 'center',
+    marginBottom: 20,
+  },
+  statsBackBtn: {
+    alignSelf: 'flex-start', background: 'transparent',
+    border: '1.5px solid rgba(255,255,255,0.2)',
+    borderRadius: 10, padding: '8px 14px', color: 'rgba(255,255,255,0.55)', fontSize: 13,
+    cursor: 'pointer', marginBottom: 14,
+  },
+  statsTitle: { fontSize: 22, fontWeight: 900, color: '#fff', margin: 0 },
+  statsSubtitle: { fontSize: 13, color: 'rgba(255,255,255,0.45)', marginTop: 4 },
+
+  myTypeCard: {
+    background: 'linear-gradient(135deg, rgba(155,127,224,0.28), rgba(107,181,255,0.14))',
+    border: '1.5px solid rgba(155,127,224,0.5)',
+    borderRadius: 18, padding: '16px 20px',
+    display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20,
+  },
+  myTypeEmoji: { fontSize: 52, lineHeight: 1 },
+  myTypeTitle: { fontSize: 16, fontWeight: 900, color: '#fff', marginBottom: 4 },
+  myTypeRank: { fontSize: 13, color: '#D4BFFF', fontWeight: 600 },
+
+  statsListWrapper: { display: 'flex', flexDirection: 'column', gap: 8 },
+  statsRow: {
+    display: 'flex', alignItems: 'center', gap: 10,
+    background: 'rgba(255,255,255,0.04)', borderRadius: 14, padding: '12px 14px',
+    border: '1px solid rgba(255,255,255,0.06)',
+  },
+  statsRowMe: {
+    background: 'rgba(155,127,224,0.15)', border: '1.5px solid rgba(155,127,224,0.45)',
+  },
+  statsRank: { fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.35)', width: 18, textAlign: 'center' as CSSProperties['textAlign'] },
+  statsTypeEmoji: { fontSize: 26, lineHeight: 1 },
+  statsInfo: { flex: 1 },
+  statsTypeName: { fontSize: 13, fontWeight: 700, color: '#fff', marginBottom: 5 },
+  statsBarWrap: { height: 6, background: 'rgba(255,255,255,0.08)', borderRadius: 3, overflow: 'hidden' },
+  statsBar: { height: '100%', borderRadius: 3, transition: 'width 0.6s ease' },
+  statsPct: { fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.65)', width: 36, textAlign: 'right' as CSSProperties['textAlign'] },
+  statsMeBadge: {
+    background: '#9B7FE0', color: '#fff', fontSize: 10, fontWeight: 800,
+    borderRadius: 10, padding: '2px 8px', whiteSpace: 'nowrap' as CSSProperties['whiteSpace'],
+  },
+  statsFooter: { fontSize: 11, color: 'rgba(255,255,255,0.22)', textAlign: 'center', marginTop: 20 },
 };
