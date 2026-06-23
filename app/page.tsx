@@ -43,7 +43,7 @@ const PERSONALITY_TYPES = [
   { id: 'digital',   emoji: '🤖', title: '디지털 좀비',         subtitle: '충전 없으면 방전 타입',    dominant: ['digital'],
     desc: '핸드폰과 한 몸. 화면이 꺼지면 불안한 현대인. 알고리즘이 나를 나보다 더 잘 알고, 충전기를 잃으면 존재 자체가 흔들린다.',
     tags: ['#폰없으면못살아', '#디지털원주민', '#충전기인생'] },
-  { id: 'emotional', emoji: '🎭', title: 'K-드라마 주인공',     subtitle: '감성 MAX 공감 천재',       dominant: ['emotion', 'social'],
+  { id: 'emotional', emoji: '🎭', title: 'K-드라마 주인공',     subtitle: '감성 MAX 공감 천재',       dominant: ['emotion'],
     desc: '광고 보다 울고, 드라마 보다 울고, 그러면서도 웃음이 끊이지 않는다. 공감 능력이 탑재된 인간 감성 충만 FULL.',
     tags: ['#감수성폭발', '#공감의신', '#눈물도웃음도많아'] },
   { id: 'thinker',   emoji: '🧠', title: '뇌가 쉬지를 않아',   subtitle: '생각 고구마 줄기 타입',    dominant: ['personality'],
