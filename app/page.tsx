@@ -85,6 +85,96 @@ function getCategoryBreakdown(items: Ingredient[]) {
     .sort((a, b) => b.count - a.count);
 }
 
+// ── 12지신 사주명리학 ──
+const ZODIAC = [
+  { name: '원숭이', emoji: '🐒', primary: 'talkative' },
+  { name: '닭',     emoji: '🐓', primary: 'coffee' },
+  { name: '개',     emoji: '🐕', primary: 'laugh' },
+  { name: '돼지',   emoji: '🐷', primary: 'food' },
+  { name: '쥐',     emoji: '🐭', primary: 'night' },
+  { name: '소',     emoji: '🐄', primary: 'stubborn' },
+  { name: '호랑이', emoji: '🐯', primary: 'emotional' },
+  { name: '토끼',   emoji: '🐰', primary: 'sensitive' },
+  { name: '용',     emoji: '🐉', primary: 'overthink' },
+  { name: '뱀',     emoji: '🐍', primary: 'perfect' },
+  { name: '말',     emoji: '🐴', primary: 'fitness' },
+  { name: '양',     emoji: '🐑', primary: 'sleep' },
+] as const;
+
+const MONTH_ING: Record<number, string> = {
+  1: 'overthink', 2: 'emotional', 3: 'fitness',  4: 'sensitive',
+  5: 'perfect',   6: 'talkative', 7: 'gaming',   8: 'food',
+  9: 'stubborn',  10: 'broke',   11: 'night',    12: 'sleep',
+};
+
+function getDayIng(day: number): string {
+  if (day <= 7) return 'phone';
+  if (day <= 14) return 'clumsy';
+  if (day <= 21) return 'coffee';
+  if (day <= 28) return 'laugh';
+  return 'broke';
+}
+
+function seededRandom(seed: number) {
+  let s = seed ^ 0x1A2B3C4D;
+  return () => {
+    s = (s + 0x6D2B79F5) | 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), 1 | t);
+    t = t + Math.imul(t ^ (t >>> 7), 61 | t) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function selectBySaju(year: number, month: number, day: number): {
+  ings: Ingredient[];
+  zodiac: { name: string; emoji: string };
+} {
+  const zodiac = ZODIAC[((year % 12) + 12) % 12];
+  const seed = year * 10000 + month * 100 + day;
+  const rand = seededRandom(seed);
+
+  const primaryIds = [
+    zodiac.primary,
+    MONTH_ING[month] ?? 'sleep',
+    getDayIng(day),
+  ];
+  const seen = new Set<string>(primaryIds);
+  const primary = primaryIds
+    .map(id => (INGREDIENTS as readonly Ingredient[]).find(i => i.id === id))
+    .filter((i): i is Ingredient => !!i);
+
+  const remaining = (INGREDIENTS as readonly Ingredient[]).filter(i => !seen.has(i.id));
+  const shuffled = [...remaining];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+
+  const ings = [...primary, ...shuffled.slice(0, MAX - primary.length)].slice(0, MAX);
+  return { ings, zodiac: { name: zodiac.name, emoji: zodiac.emoji } };
+}
+
+function buildPouringSequence(base: Ingredient[]): { ing: Ingredient; isAccident: boolean; isEmpty: boolean }[] {
+  const seq: { ing: Ingredient; isAccident: boolean; isEmpty: boolean }[] = [];
+  const used = new Set<string>();
+  for (const ing of base) {
+    if (seq.length >= MAX) break;
+    const isEmpty = Math.random() < 0.2;
+    seq.push({ ing, isAccident: false, isEmpty });
+    used.add(ing.id);
+    if (seq.length < MAX && Math.random() < 0.3) {
+      const avail = (INGREDIENTS as readonly Ingredient[]).filter(i => !used.has(i.id));
+      if (avail.length > 0) {
+        const acc = avail[Math.floor(Math.random() * avail.length)];
+        seq.push({ ing: acc, isAccident: true, isEmpty: Math.random() < 0.2 });
+        used.add(acc.id);
+      }
+    }
+  }
+  return seq;
+}
+
 const PARTICLE_EMOJIS = ['✨', '💥', '🌟', '⚡', '🔥', '💨', '🫧', '💫'];
 const STARS = Array.from({ length: 20 }, (_, i) => ({
   left: `${(i * 5 + 3) % 97}%`,
@@ -109,20 +199,34 @@ const GOD_ACCIDENT_LINES = [
   (ing: string) => `으아!! ${ing}는 안 됐는데!!`,
 ];
 
-type Phase = 'intro' | 'naming' | 'select' | 'explosion' | 'result';
+const GOD_EMPTY_LINES = [
+  (ing: string) => `어... ${ing}... 거의 다 됐는데... 한두방울만...`,
+  (ing: string) => `이게 빈 병이잖아?! ${ing}... 바닥 긁어서 넣겠노라...`,
+  (ing: string) => `흔들흔들... ${ing}... 한방울 겨우 남았군...`,
+  (ing: string) => `${ing}는... 재고가 없군... 아 그래도 조금은 있네?!`,
+];
 
-// 복불복 알림 텍스트
 const ACCIDENT_SHOUT = ['앗!!', '어?!', '이게왜?!', '으아아!!'];
+
+type Phase = 'intro' | 'naming' | 'pouring' | 'explosion' | 'result';
 
 export default function GodGame() {
   const [phase, setPhase] = useState<Phase>('intro');
-  const [userName, setUserName] = useState('');
-  const [nameInput, setNameInput] = useState('');
+
+  // naming 단계 (1~5)
   const [namingStep, setNamingStep] = useState(0);
+  const [nameInput, setNameInput] = useState('');
+  const [userName, setUserName] = useState('');
+  const [yearInput, setYearInput] = useState('');
+  const [monthInput, setMonthInput] = useState('');
+  const [dayInput, setDayInput] = useState('');
+  const [zodiacInfo, setZodiacInfo] = useState<{ name: string; emoji: string } | null>(null);
+  const [saJuIngs, setSaJuIngs] = useState<Ingredient[]>([]);
 
   const [selected, setSelected] = useState<Ingredient[]>([]);
   const selectedRef = useRef<Ingredient[]>([]);
   const [accidentals, setAccidentals] = useState<Set<string>>(new Set());
+  const [emptyBottles, setEmptyBottles] = useState<Set<string>>(new Set());
 
   const [godSvgType, setGodSvgType] = useState<'idle' | 'panic' | 'dazed'>('idle');
   const [godClass, setGodClass] = useState('');
@@ -153,19 +257,51 @@ export default function GodGame() {
 
   useEffect(() => {
     if (phase !== 'naming') return;
-    const t = setTimeout(() => setNamingStep(1), 500);
+    const t = setTimeout(() => setNamingStep(1), 400);
     return () => clearTimeout(t);
   }, [phase]);
 
+  // 이름 확인
   const handleNameSubmit = useCallback(() => {
     const name = nameInput.trim();
     if (!name) return;
     setUserName(name);
     setNamingStep(2);
-    const t1 = setTimeout(() => setNamingStep(3), 2200);
-    const t2 = setTimeout(() => setPhase('select'), 2900);
-    timers.current.push(t1, t2);
   }, [nameInput]);
+
+  // step2 ▶ 다음
+  const handleStep2Next = useCallback(() => {
+    setNamingStep(3);
+  }, []);
+
+  // 생년월일 확인 → 사주 계산 → step4
+  const handleDateSubmit = useCallback(() => {
+    const y = parseInt(yearInput);
+    const m = parseInt(monthInput);
+    const d = parseInt(dayInput);
+    if (!y || !m || !d || m < 1 || m > 12 || d < 1 || d > 31 || y < 1900 || y > 2030) return;
+    const { ings, zodiac } = selectBySaju(y, m, d);
+    setZodiacInfo(zodiac);
+    setSaJuIngs(ings);
+    setNamingStep(4);
+  }, [yearInput, monthInput, dayInput]);
+
+  // 네 → step5
+  const handleYes = useCallback(() => {
+    setNamingStep(5);
+  }, []);
+
+  // 아니오 → step1 (이름부터 다시)
+  const handleNo = useCallback(() => {
+    setNameInput('');
+    setUserName('');
+    setYearInput('');
+    setMonthInput('');
+    setDayInput('');
+    setZodiacInfo(null);
+    setSaJuIngs([]);
+    setNamingStep(1);
+  }, []);
 
   const triggerExplosion = useCallback(() => {
     setGodSvgType('panic');
@@ -189,80 +325,81 @@ export default function GodGame() {
     timers.current.push(t1, t2, t3, t4, t5);
   }, [showGodSpeech]);
 
-  const handleSelect = useCallback((ing: Ingredient) => {
-    if (phase !== 'select') return;
-    const isSel = !!selectedRef.current.find(s => s.id === ing.id);
+  // step5 ▶ 운명의 재료 보기 → pouring 시작
+  const startPouring = useCallback(() => {
+    const sequence = buildPouringSequence(saJuIngs);
+    setPhase('pouring');
 
-    if (isSel) {
-      const newSel = selectedRef.current.filter(s => s.id !== ing.id);
-      selectedRef.current = newSel;
-      setSelected(newSel);
-      setAccidentals(prev => { const n = new Set(prev); n.delete(ing.id); return n; });
-      showGodSpeech(`${ing.emoji} ${ing.name}... 다시 뺐노라. 흠.`);
-      return;
-    }
-    if (selectedRef.current.length >= MAX) return;
+    let delay = 500;
+    sequence.forEach((item, idx) => {
+      const t = setTimeout(() => {
+        const spoons = Math.floor(Math.random() * 10) + 1;
 
-    setBouncingId(ing.id);
-    const bt = setTimeout(() => setBouncingId(null), 400);
-    timers.current.push(bt);
+        if (item.isEmpty && item.isAccident) {
+          // 사고 + 빈 병 (드문 경우)
+          const shout = ACCIDENT_SHOUT[Math.floor(Math.random() * ACCIDENT_SHOUT.length)];
+          setAccidentFlash(`${shout}\n${item.ing.emoji}${item.ing.name}... 그나마 한방울!`);
+          const cf = setTimeout(() => setAccidentFlash(null), 1800);
+          timers.current.push(cf);
+          const lineIdx = Math.floor(Math.random() * GOD_EMPTY_LINES.length);
+          showGodSpeech(GOD_EMPTY_LINES[lineIdx](`${item.ing.emoji}${item.ing.name}`), 4000);
+          setGodClass('god-shake');
+          const gt = setTimeout(() => setGodClass(''), 1600);
+          timers.current.push(gt);
+          setAccidentals(prev => new Set([...prev, item.ing.id]));
+          setEmptyBottles(prev => new Set([...prev, item.ing.id]));
+        } else if (item.isAccident) {
+          const shout = ACCIDENT_SHOUT[Math.floor(Math.random() * ACCIDENT_SHOUT.length)];
+          setAccidentFlash(`${shout}\n실수로 ${item.ing.emoji}${item.ing.name}가 들어갔다!!`);
+          const cf = setTimeout(() => setAccidentFlash(null), 1800);
+          timers.current.push(cf);
+          const accIdx = Math.floor(Math.random() * GOD_ACCIDENT_LINES.length);
+          showGodSpeech(GOD_ACCIDENT_LINES[accIdx](`${item.ing.emoji}${item.ing.name}`), 4000);
+          setAccidentals(prev => new Set([...prev, item.ing.id]));
+        } else if (item.isEmpty) {
+          const lineIdx = Math.floor(Math.random() * GOD_EMPTY_LINES.length);
+          showGodSpeech(GOD_EMPTY_LINES[lineIdx](`${item.ing.emoji}${item.ing.name}`), 4000);
+          setGodClass('god-shake');
+          const gt = setTimeout(() => setGodClass(''), 1600);
+          timers.current.push(gt);
+          setEmptyBottles(prev => new Set([...prev, item.ing.id]));
+        } else {
+          const lineIdx = Math.floor(Math.random() * GOD_SELECT_LINES.length);
+          showGodSpeech(GOD_SELECT_LINES[lineIdx](userName || '너', `${item.ing.emoji}${item.ing.name}`, spoons));
+        }
 
-    const spoons = Math.floor(Math.random() * 10) + 1;
-    const lineIdx = Math.floor(Math.random() * GOD_SELECT_LINES.length);
-    showGodSpeech(GOD_SELECT_LINES[lineIdx](userName || '너', `${ing.emoji}${ing.name}`, spoons));
+        setBouncingId(item.ing.id);
+        const bt = setTimeout(() => setBouncingId(null), 400);
+        timers.current.push(bt);
 
-    const canAccident = selectedRef.current.length + 1 < MAX;
-    const willAccident = canAccident && Math.random() < 0.3;
+        const newSel = [...selectedRef.current, item.ing];
+        selectedRef.current = newSel;
+        setSelected(newSel);
 
-    let accIng: Ingredient | null = null;
-    if (willAccident) {
-      const usedIds = new Set([...selectedRef.current.map(s => s.id), ing.id]);
-      const avail = (INGREDIENTS as readonly Ingredient[]).filter(i => !usedIds.has(i.id));
-      if (avail.length > 0) accIng = avail[Math.floor(Math.random() * avail.length)];
-    }
-
-    const newSel = [...selectedRef.current, ing];
-    selectedRef.current = newSel;
-    setSelected(newSel);
-
-    if (accIng) {
-      const finalAcc = accIng;
-      const at = setTimeout(() => {
-        const idx = Math.floor(Math.random() * GOD_ACCIDENT_LINES.length);
-        showGodSpeech(GOD_ACCIDENT_LINES[idx](`${finalAcc.emoji}${finalAcc.name}`), 4500);
-        // 복불복 극적 표시
-        const shout = ACCIDENT_SHOUT[Math.floor(Math.random() * ACCIDENT_SHOUT.length)];
-        setAccidentFlash(`${shout}\n실수로 ${finalAcc.emoji}${finalAcc.name}가 들어갔다!!`);
-        const cf = setTimeout(() => setAccidentFlash(null), 1800);
-        timers.current.push(cf);
-        setBouncingId(finalAcc.id);
-        setAccidentals(prev => new Set([...prev, finalAcc.id]));
-        const bt2 = setTimeout(() => setBouncingId(null), 400);
-        timers.current.push(bt2);
-        const withAcc = [...selectedRef.current, finalAcc];
-        selectedRef.current = withAcc;
-        setSelected(withAcc);
-        if (withAcc.length >= MAX) {
-          setPhase('explosion');
-          const et = setTimeout(triggerExplosion, 500);
+        if (idx === sequence.length - 1) {
+          const et = setTimeout(() => {
+            setPhase('explosion');
+            triggerExplosion();
+          }, 2200);
           timers.current.push(et);
         }
-      }, 1500);
-      timers.current.push(at);
-    } else if (newSel.length >= MAX) {
-      setPhase('explosion');
-      const et = setTimeout(triggerExplosion, 300);
-      timers.current.push(et);
-    }
-  }, [phase, userName, showGodSpeech, triggerExplosion]);
+      }, delay);
+
+      timers.current.push(t);
+      delay += item.isEmpty ? 3200 : item.isAccident ? 2800 : 2200;
+    });
+  }, [saJuIngs, userName, showGodSpeech, triggerExplosion]);
 
   const handleReset = useCallback(() => {
     clearAllTimers();
     selectedRef.current = [];
     setSelected([]); setUserName(''); setNameInput(''); setNamingStep(0);
+    setYearInput(''); setMonthInput(''); setDayInput('');
+    setZodiacInfo(null); setSaJuIngs([]);
     setGodSvgType('idle'); setGodClass(''); setBeakerClass(''); setFlashClass('');
     setParticles([]); setShowResult(false); setBouncingId(null);
-    setAccidentals(new Set()); setGodSpeech(''); setShowSpeech(false); setAccidentFlash(null);
+    setAccidentals(new Set()); setEmptyBottles(new Set());
+    setGodSpeech(''); setShowSpeech(false); setAccidentFlash(null);
     setPhase('intro');
   }, [clearAllTimers]);
 
@@ -320,7 +457,7 @@ export default function GodGame() {
           <h1 style={{ ...css.introTitle } as CSSProperties} className="title-pop">
             신이 나를 만들 때 🧪
           </h1>
-          <p style={css.introSub}>재료 5개로 알아보는 나의 진짜 성격</p>
+          <p style={css.introSub}>생년월일 사주로 알아보는 나의 진짜 성격</p>
 
           <div style={css.introGodWrap}>
             <div style={css.introBubble}>
@@ -341,13 +478,14 @@ export default function GodGame() {
         </div>
       )}
 
-      {/* ── 이름 입력 (RPG 대화) ── */}
+      {/* ── 이름 + 생년월일 RPG 대화 ── */}
       {phase === 'naming' && (
         <div style={css.namingScreen}>
           <div style={css.namingGodWrap}>
             <GodIdle count={0} />
           </div>
 
+          {/* step 1: 이름 입력 */}
           {namingStep === 1 && (
             <div style={css.rpgBox}>
               <div style={css.rpgSpeaker}>신 🌩️</div>
@@ -368,27 +506,108 @@ export default function GodGame() {
             </div>
           )}
 
+          {/* step 2: 이름 반응 (클릭 진행) */}
           {namingStep === 2 && (
             <div style={css.rpgBox}>
               <div style={css.rpgSpeaker}>신 🌩️</div>
               <p style={css.rpgLine}><b>{userName}</b>...</p>
               <p style={css.rpgLine}>그렇군...</p>
+              <p style={css.rpgLine}>흠... 좋은 이름이군. ☁️</p>
+              <p style={css.rpgLine}>그렇다면 생년월일도 알려주겠느냐?</p>
+              <div style={css.rpgAdvanceRow}>
+                <button style={css.rpgAdvanceBtn} onClick={handleStep2Next}>▶</button>
+              </div>
             </div>
           )}
 
+          {/* step 3: 생년월일 입력 */}
           {namingStep === 3 && (
             <div style={css.rpgBox}>
               <div style={css.rpgSpeaker}>신 🌩️</div>
-              <p style={css.rpgLine}>좋아.</p>
-              <p style={css.rpgLine}>신이 <b>{userName}</b>을(를) 만들어보겠노라!</p>
-              <p style={{ ...css.rpgLine, color: '#FFD700', fontWeight: 800 } as CSSProperties}>⚗️ 실험 시작!!</p>
+              <p style={css.rpgLine}>그렇다면...</p>
+              <p style={css.rpgLine}><b>{userName}</b>는 언제 태어났느냐?</p>
+              <div style={css.dateRow}>
+                <input
+                  style={css.dateInputYear}
+                  value={yearInput}
+                  onChange={e => setYearInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleDateSubmit()}
+                  placeholder="1990"
+                  maxLength={4}
+                  inputMode="numeric"
+                  autoFocus
+                />
+                <span style={css.dateLabel}>년</span>
+                <input
+                  style={css.dateInputShort}
+                  value={monthInput}
+                  onChange={e => setMonthInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleDateSubmit()}
+                  placeholder="6"
+                  maxLength={2}
+                  inputMode="numeric"
+                />
+                <span style={css.dateLabel}>월</span>
+                <input
+                  style={css.dateInputShort}
+                  value={dayInput}
+                  onChange={e => setDayInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleDateSubmit()}
+                  placeholder="15"
+                  maxLength={2}
+                  inputMode="numeric"
+                />
+                <span style={css.dateLabel}>일</span>
+              </div>
+              <button style={css.rpgBtn} onClick={handleDateSubmit}>확인 ▶</button>
+            </div>
+          )}
+
+          {/* step 4: 확인 (네/아니오 선택) */}
+          {namingStep === 4 && zodiacInfo && (
+            <div style={css.rpgBox}>
+              <div style={css.rpgSpeaker}>신 🌩️</div>
+              <p style={css.rpgLine}>너의 이름은... <b>{userName}</b>....</p>
+              <p style={css.rpgLine}>
+                너는 <b>{yearInput}년 {monthInput}월 {dayInput}일</b>생 이었지.....
+              </p>
+              <p style={css.rpgLine}>
+                <span style={{ fontSize: 22 }}>{zodiacInfo.emoji}</span>{' '}
+                <b>{zodiacInfo.name}띠</b>이로구나...
+              </p>
+              <p style={{ ...css.rpgLine, color: '#FFD700', marginTop: 6 } as CSSProperties}>
+                맞나...? 🤔
+              </p>
+              <div style={css.yesNoBar}>
+                <button style={css.noBtn} onClick={handleNo}>✕ 아니오</button>
+                <button style={css.yesBtn} onClick={handleYes}>✓ 네</button>
+              </div>
+            </div>
+          )}
+
+          {/* step 5: 운명 발견 (클릭 진행) */}
+          {namingStep === 5 && zodiacInfo && (
+            <div style={css.rpgBox}>
+              <div style={css.rpgSpeaker}>신 🌩️</div>
+              <p style={css.rpgLine}>
+                ✨ <b>{zodiacInfo.emoji} {zodiacInfo.name}</b>의 기운을 읽겠노라...
+              </p>
+              <p style={css.rpgLine}>운명의 재료가 보이기 시작했다!</p>
+              <p style={{ ...css.rpgLine, color: '#FFD700', fontWeight: 800, marginTop: 4 } as CSSProperties}>
+                지금부터 신이 직접 만들어주겠노라!! ⚗️
+              </p>
+              <div style={css.rpgAdvanceRow}>
+                <button style={css.startPourBtn} onClick={startPouring}>
+                  ▶ 운명의 재료 보기
+                </button>
+              </div>
             </div>
           )}
         </div>
       )}
 
-      {/* ── 게임 (선택 + 폭발) ── */}
-      {(phase === 'select' || phase === 'explosion') && (
+      {/* ── 게임 (자동 붓기 + 폭발) ── */}
+      {(phase === 'pouring' || phase === 'explosion') && (
         <div style={css.container}>
           {/* 헤더 */}
           <div style={css.header}>
@@ -447,66 +666,42 @@ export default function GodGame() {
             ))}
           </div>
 
-          {/* 선택된 재료 스트립 */}
-          {selected.length > 0 && phase === 'select' && (
-            <div style={css.strip}>
-              <div style={css.stripInner}>
-                {selected.map(ing => (
-                  <button key={ing.id} style={{
-                    ...css.stripChip,
-                    ...(accidentals.has(ing.id) ? css.stripChipAcc : {}),
-                  }} onClick={() => handleSelect(ing)}>
-                    {ing.emoji} {ing.name}
-                    {accidentals.has(ing.id) && <span style={{ fontSize: 10, marginLeft: 2 }}>💥</span>}
-                    <span style={{ opacity: 0.5 }}>×</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* 재료 그리드 */}
-          {phase === 'select' && (
-            <div style={css.gridScroll}>
-              <p style={css.gridHint}>
+          {/* 자동 붓기 - 재료 등장 카드 */}
+          {phase === 'pouring' && (
+            <div style={css.pouringArea}>
+              <p style={css.pouringHint}>
                 {selected.length < MAX
-                  ? `🧫 재료를 ${MAX}개 골라봐 (${selected.length}/${MAX})`
-                  : '🎉 5개 완료! 실험 중...'}
+                  ? `✨ 신이 운명의 재료를 넣는 중... (${selected.length}/${MAX})`
+                  : '⚗️ 다 됐다! 섞는 중...'}
               </p>
-              <div style={css.grid}>
-                {INGREDIENTS.map(ing => {
-                  const isSel = !!selected.find(s => s.id === ing.id);
+              <div style={css.pouringGrid}>
+                {selected.map(ing => {
                   const isAcc = accidentals.has(ing.id);
-                  const isDisabled = !isSel && selected.length >= MAX;
+                  const isEmpty = emptyBottles.has(ing.id);
                   const isBouncing = bouncingId === ing.id;
                   return (
-                    <button
+                    <div
                       key={ing.id}
                       className={isBouncing ? 'card-bounce' : ''}
-                      disabled={isDisabled}
-                      onClick={() => handleSelect(ing)}
                       style={{
-                        ...css.card,
-                        ...(isSel && !isAcc ? css.cardSel : {}),
-                        ...(isSel && isAcc ? css.cardAcc : {}),
-                        ...(isDisabled ? css.cardDim : {}),
+                        ...css.pourCard,
+                        ...(isAcc ? css.pourCardAcc : {}),
+                        ...(isEmpty ? css.pourCardEmpty2 : {}),
                       }}
                     >
-                      <span style={css.cardEmoji}>{ing.emoji}</span>
-                      <span style={{ ...css.cardName, ...(isSel ? { color: isAcc ? '#FFB3B3' : '#D4BFFF' } : {}) }}>
-                        {ing.name}
-                      </span>
-                      <span style={{ ...css.cardDesc, ...(isSel ? { color: 'rgba(212,191,255,0.65)' } : {}) }}>
-                        {ing.desc}
-                      </span>
-                      {isSel && (
-                        <span style={isAcc ? css.accBadge : css.checkBadge}>
-                          {isAcc ? '💥' : '✓'}
-                        </span>
-                      )}
-                    </button>
+                      <span style={css.pourEmoji}>{ing.emoji}</span>
+                      <span style={css.pourName}>{ing.name}</span>
+                      {isAcc && !isEmpty && <span style={css.accBadgePour}>💥 실수</span>}
+                      {isEmpty && <span style={css.emptyBadgePour}>💧 한방울</span>}
+                    </div>
                   );
                 })}
+                {/* 빈 슬롯 */}
+                {Array.from({ length: MAX - selected.length }).map((_, i) => (
+                  <div key={`empty-${i}`} style={css.pourCardSlot}>
+                    <span style={{ fontSize: 22, opacity: 0.2 }}>?</span>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -556,7 +751,7 @@ export default function GodGame() {
           <div style={css.resultBg} />
           <div style={css.resultScroll}>
             <div style={css.resultContent}>
-              {/* 신 축하 말풍선 */}
+              {/* 신 말풍선 */}
               <div style={css.resultGodRow}>
                 <GodDazed />
                 <div style={css.resultBubble}>
@@ -576,16 +771,18 @@ export default function GodGame() {
               </div>
 
               <div style={css.section}>
-                <div style={css.sectionTitle}>📦 넣은 재료</div>
+                <div style={css.sectionTitle}>📦 신이 넣은 재료</div>
                 <div style={css.recapGrid}>
                   {selected.map(ing => (
                     <div key={ing.id} style={{
                       ...css.recapChip,
                       ...(accidentals.has(ing.id) ? css.recapChipAcc : {}),
+                      ...(emptyBottles.has(ing.id) ? css.recapChipEmpty : {}),
                     }}>
                       <span style={{ fontSize: 20 }}>{ing.emoji}</span>
                       <span style={css.recapName}>{ing.name}</span>
-                      {accidentals.has(ing.id) && <span style={css.accLabel}>실수</span>}
+                      {accidentals.has(ing.id) && !emptyBottles.has(ing.id) && <span style={css.accLabel}>실수</span>}
+                      {emptyBottles.has(ing.id) && <span style={css.emptyLabel}>💧 한방울</span>}
                     </div>
                   ))}
                 </div>
@@ -679,7 +876,7 @@ const css: Record<string, CSSProperties> = {
     marginTop: 8, fontStyle: 'italic',
   },
 
-  // ── 이름 입력 ──
+  // ── 이름 / 생년월일 입력 공통 ──
   namingScreen: {
     position: 'relative', zIndex: 1,
     minHeight: '100dvh', width: '100%', maxWidth: 480,
@@ -719,7 +916,63 @@ const css: Record<string, CSSProperties> = {
     background: '#9B7FE0', border: 'none', borderRadius: 10,
     padding: '12px 18px', color: '#fff', fontSize: 14,
     fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap',
+    marginTop: 14, alignSelf: 'flex-end',
   },
+
+  // 클릭 진행 화살표 버튼
+  rpgAdvanceRow: {
+    display: 'flex', justifyContent: 'flex-end', marginTop: 18,
+  },
+  rpgAdvanceBtn: {
+    background: 'rgba(155,127,224,0.25)', border: '2px solid rgba(155,127,224,0.6)',
+    borderRadius: 10, padding: '10px 20px', color: '#D4BFFF',
+    fontSize: 18, fontWeight: 900, cursor: 'pointer',
+    animation: 'pulseBadge 1.8s ease-in-out infinite',
+  },
+  startPourBtn: {
+    background: '#9B7FE0', border: '2px solid #fff', borderRadius: 12,
+    padding: '12px 24px', color: '#fff', fontSize: 14,
+    fontWeight: 900, cursor: 'pointer', letterSpacing: 0.5,
+    boxShadow: '3px 3px 0px rgba(0,0,0,0.3)',
+  },
+
+  // YES/NO 네비게이션 바
+  yesNoBar: {
+    display: 'flex', gap: 12, marginTop: 20,
+  },
+  noBtn: {
+    flex: 1, background: 'rgba(255,80,80,0.15)', border: '2px solid #FF6060',
+    borderRadius: 12, padding: '14px 0', color: '#FF9090',
+    fontSize: 15, fontWeight: 800, cursor: 'pointer',
+  },
+  yesBtn: {
+    flex: 1, background: '#9B7FE0', border: '2px solid #fff',
+    borderRadius: 12, padding: '14px 0', color: '#fff',
+    fontSize: 15, fontWeight: 800, cursor: 'pointer',
+    boxShadow: '3px 3px 0px rgba(0,0,0,0.3)',
+  },
+
+  // 생년월일 입력 전용
+  dateRow: {
+    display: 'flex', alignItems: 'center', gap: 6, marginTop: 16, flexWrap: 'wrap',
+  },
+  dateInputYear: {
+    width: 80, background: 'rgba(255,255,255,0.08)',
+    border: '1.5px solid rgba(155,127,224,0.5)', borderRadius: 10,
+    padding: '12px 10px', color: '#fff', fontSize: 16, outline: 'none',
+    textAlign: 'center',
+  },
+  dateInputShort: {
+    width: 52, background: 'rgba(255,255,255,0.08)',
+    border: '1.5px solid rgba(155,127,224,0.5)', borderRadius: 10,
+    padding: '12px 8px', color: '#fff', fontSize: 16, outline: 'none',
+    textAlign: 'center',
+  },
+  dateLabel: {
+    color: 'rgba(255,255,255,0.7)', fontSize: 15, fontWeight: 600,
+  },
+
+  dots: { display: 'flex', gap: 6, alignItems: 'center', marginTop: 12 },
 
   // ── 게임 ──
   container: {
@@ -785,49 +1038,44 @@ const css: Record<string, CSSProperties> = {
   beakerBase: { width: 38, height: 7, background: 'rgba(255,255,255,0.2)', borderRadius: 3 },
   beakerCount: { fontSize: 14, fontWeight: 800, color: 'rgba(255,255,255,0.65)', marginTop: 3 },
 
-  strip: {
-    borderTop: '1px solid rgba(255,255,255,0.08)',
-    overflowX: 'auto', padding: '7px 0', scrollbarWidth: 'none',
+  // 자동 붓기 - 재료 카드 그리드
+  pouringArea: {
+    flex: 1, padding: '12px 16px',
   },
-  stripInner: { display: 'flex', gap: 8, padding: '0 16px', width: 'max-content' },
-  stripChip: {
-    background: 'rgba(155,127,224,0.22)', border: '1px solid rgba(155,127,224,0.4)',
-    borderRadius: 20, padding: '5px 12px', color: '#fff',
-    fontSize: 12, fontWeight: 600, cursor: 'pointer',
-    whiteSpace: 'nowrap', display: 'flex', gap: 4, alignItems: 'center',
+  pouringHint: {
+    fontSize: 13, color: 'rgba(255,255,255,0.55)',
+    textAlign: 'center', marginBottom: 14, fontWeight: 600,
   },
-  stripChipAcc: {
-    background: 'rgba(255,100,100,0.2)', border: '1px solid rgba(255,100,100,0.5)',
+  pouringGrid: {
+    display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8,
   },
-
-  gridScroll: { flex: 1, overflowY: 'auto', padding: '0 12px' },
-  gridHint: {
-    fontSize: 12, color: 'rgba(255,255,255,0.45)',
-    textAlign: 'center', margin: '6px 0 10px', fontWeight: 500,
+  pourCard: {
+    background: 'rgba(155,127,224,0.22)', border: '1.5px solid #9B7FE0',
+    borderRadius: 14, padding: '10px 4px',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+    position: 'relative', animation: 'titlePop 0.3s ease both',
   },
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, paddingBottom: 16 },
-  card: {
-    background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.1)',
-    borderRadius: 14, padding: '10px 8px', cursor: 'pointer', color: '#fff',
-    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
-    position: 'relative', transition: 'border-color 0.15s, background 0.15s',
-    textAlign: 'center',
+  pourCardAcc: {
+    background: 'rgba(255,80,80,0.22)', border: '1.5px solid #FF6060',
   },
-  cardSel: { background: 'rgba(155,127,224,0.22)', border: '1.5px solid #9B7FE0' },
-  cardAcc: { background: 'rgba(255,80,80,0.18)', border: '1.5px solid #FF6060' },
-  cardDim: { opacity: 0.28, cursor: 'default' },
-  cardEmoji: { fontSize: 26, lineHeight: 1 },
-  cardName: { fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.9)' },
-  cardDesc: { fontSize: 9, color: 'rgba(255,255,255,0.38)', lineHeight: 1.35 },
-  checkBadge: {
-    position: 'absolute', top: 4, right: 4, width: 16, height: 16,
-    borderRadius: '50%', background: '#9B7FE0', color: '#fff',
-    fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center',
+  pourCardEmpty2: {
+    background: 'rgba(100,180,255,0.15)', border: '1.5px solid #7BB8F5',
   },
-  accBadge: {
-    position: 'absolute', top: 3, right: 3, width: 18, height: 18,
-    borderRadius: '50%', background: '#FF5050',
-    fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
+  pourCardSlot: {
+    background: 'rgba(255,255,255,0.04)', border: '1.5px dashed rgba(255,255,255,0.12)',
+    borderRadius: 14, padding: '10px 4px',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+    minHeight: 70,
+  },
+  pourEmoji: { fontSize: 28, lineHeight: 1 },
+  pourName: { fontSize: 10, fontWeight: 700, color: '#D4BFFF', textAlign: 'center' },
+  accBadgePour: {
+    fontSize: 9, fontWeight: 800, color: '#FF9090',
+    background: 'rgba(255,60,60,0.2)', borderRadius: 8, padding: '1px 5px',
+  },
+  emptyBadgePour: {
+    fontSize: 9, fontWeight: 800, color: '#7BB8F5',
+    background: 'rgba(100,180,255,0.2)', borderRadius: 8, padding: '1px 5px',
   },
 
   explosionMid: {
@@ -837,7 +1085,6 @@ const css: Record<string, CSSProperties> = {
   expTitle: { fontSize: 26, fontWeight: 900, color: '#fff' },
   expSub: { fontSize: 14, color: 'rgba(255,255,255,0.6)' },
   expIngs: { display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' },
-  dots: { display: 'flex', gap: 6, alignItems: 'center' },
 
   flash: { position: 'fixed', inset: 0, background: '#FFF5AA', pointerEvents: 'none', zIndex: 200 },
 
@@ -903,10 +1150,15 @@ const css: Record<string, CSSProperties> = {
     borderRadius: 12, padding: '7px 12px', display: 'flex', alignItems: 'center', gap: 6,
   },
   recapChipAcc: { background: 'rgba(255,80,80,0.12)', border: '1px solid rgba(255,80,80,0.3)' },
+  recapChipEmpty: { background: 'rgba(100,180,255,0.1)', border: '1px solid rgba(100,180,255,0.3)' },
   recapName: { fontSize: 12, fontWeight: 600, color: '#fff' },
   accLabel: {
     fontSize: 9, fontWeight: 800, color: '#FF8080',
     background: 'rgba(255,80,80,0.2)', borderRadius: 8, padding: '1px 6px',
+  },
+  emptyLabel: {
+    fontSize: 9, fontWeight: 800, color: '#7BB8F5',
+    background: 'rgba(100,180,255,0.2)', borderRadius: 8, padding: '1px 6px',
   },
 
   barRow: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 },
