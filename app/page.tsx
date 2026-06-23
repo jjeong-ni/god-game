@@ -36,60 +36,165 @@ const CAT_COLOR: Record<string, string> = {
   daily: '#E0A83C', energy: '#FF6B2F',
 };
 
+// 36유형: 12간지(년지) × 오행 기질 3단계 (양기/음기/중심)
+// tier 0 = 양기형 (dominant=木or火), tier 1 = 음기형 (dominant=金or水), tier 2 = 중심형 (dominant=土)
+// index = zodiacIdx * 3 + tier
 const PERSONALITY_TYPES = [
-  { id: 'sleepy',    emoji: '😪', title: '인간 슬리핑 뷰티',   subtitle: '이불 밖은 위험해 타입',    dominant: ['rest'],
-    desc: '수면이야말로 최고의 힐링. 이불 밖은 위험하다는 걸 온몸으로 아는 분. 그 여유로운 에너지로 주변에 평화를 가져다준다.',
-    tags: ['#이불밖은위험해', '#수면전문가', '#알람5개기본'] },
-  { id: 'digital',   emoji: '🤖', title: '디지털 좀비',         subtitle: '충전 없으면 방전 타입',    dominant: ['digital'],
-    desc: '핸드폰과 한 몸. 화면이 꺼지면 불안한 현대인. 알고리즘이 나를 나보다 더 잘 알고, 충전기를 잃으면 존재 자체가 흔들린다.',
-    tags: ['#폰없으면못살아', '#디지털원주민', '#충전기인생'] },
-  { id: 'emotional', emoji: '🎭', title: 'K-드라마 주인공',     subtitle: '감성 MAX 공감 천재',       dominant: ['emotion'],
-    desc: '광고 보다 울고, 드라마 보다 울고, 그러면서도 웃음이 끊이지 않는다. 공감 능력이 탑재된 인간 감성 충만 FULL.',
-    tags: ['#감수성폭발', '#공감의신', '#눈물도웃음도많아'] },
-  { id: 'thinker',   emoji: '🧠', title: '뇌가 쉬지를 않아',   subtitle: '생각 고구마 줄기 타입',    dominant: ['personality'],
-    desc: '자기 전 5년 후 걱정하고, 완벽하게 하려다 시작을 못 하기도. 하지만 그 꼼꼼함이 어떤 일이든 특별하게 만든다.',
-    tags: ['#생각과부하', '#완벽주의자', '#고집도있어'] },
-  { id: 'foodie',    emoji: '🍴', title: '먹방의 신',           subtitle: '배 부르면 행복 타입',      dominant: ['food'],
-    desc: '먹는 게 낙이고, 먹는 게 힐링. 맛집 리스트 항상 업데이트 중. 배고프면 사람이 변한다는 걸 주변이 먼저 안다.',
-    tags: ['#먹방러', '#음식이행복', '#배고프면주의'] },
-  { id: 'social',    emoji: '🌟', title: '분위기 메이커',       subtitle: '침묵이 불편한 타입',       dominant: ['social'],
-    desc: '어디서나 웃음을 만드는 분위기 메이커. 침묵은 채워야 하고, 새로운 사람 만나는 게 즐겁다. 모임의 태양 같은 존재.',
-    tags: ['#수다쟁이', '#분위기메이커', '#인싸본능'] },
-  { id: 'energy',    emoji: '⚡', title: '에너자이저 폭발형',  subtitle: '에너지가 어디서 나와 타입', dominant: ['energy'],
-    desc: '쉬는 날도 헬스장, 체력이 넘쳐서 주변이 지친다. 하지만 그 에너지로 목표 달성율 200%. 액션 타입.',
-    tags: ['#운동귀신', '#에너지폭발', '#몸이먼저움직여'] },
-  { id: 'daily',     emoji: '😅', title: '일상의 생존러',       subtitle: '카페인으로 버티는 타입',   dominant: ['daily'],
-    desc: '텅장이지만 오늘도 행복하고, 덜렁거리지만 어떻게든 해낸다. 커피 없이는 아침이 없는 현실형 인간의 정석.',
-    tags: ['#텅장러', '#카페인의존', '#그래도살아남기'] },
-  { id: 'chaotic',   emoji: '🎰', title: '신도 포기한 조합',    subtitle: '예측 불가 혼돈 천재',      dominant: [] as string[],
-    desc: '도무지 한 마디로 정의 불가. 다양한 매력이 폭발적으로 섞여 신도 손 놓은 독특한 존재. 만나는 사람마다 다른 나를 발견하게 된다.',
-    tags: ['#반전매력', '#예측불가', '#나도나를모름'] },
+  // ── 원숭이 (year%12=0) ──
+  { id: 'monkey_yang',  emoji: '🐒', title: '활화산 원숭이',   subtitle: '재치+열정 동시 폭발 타입',
+    desc: '아이디어와 실행력이 동시에 넘침. 입이 먼저 행동이 나중이지만 결국 해내는 에너지형. 주변을 끊임없이 자극하는 존재.',
+    tags: ['#재치왕', '#행동파', '#입이먼저손이나중'] },
+  { id: 'monkey_yin',   emoji: '🐒', title: '전략가 원숭이',   subtitle: '겉은 얌전 속은 계산기',
+    desc: '조용히 3수 앞을 읽는 타입. 말 없이 상황을 파악하고 결정적 순간에 정확하게 움직임. 임기응변의 끝판왕.',
+    tags: ['#전략형', '#눈치만렙', '#겉얌전속야망'] },
+  { id: 'monkey_earth', emoji: '🐒', title: '나무 원숭이',     subtitle: '어디서든 균형 잡는 타입',
+    desc: '좌충우돌하면서도 결국 살아남는 생존 본능. 어떤 환경에서도 뿌리를 내리는 적응의 신.',
+    tags: ['#적응력갑', '#균형잡기', '#좌충우돌생존'] },
+
+  // ── 닭 (year%12=1) ──
+  { id: 'rooster_yang',  emoji: '🐓', title: '불닭',           subtitle: '완벽주의+직설화법 끓는 타입',
+    desc: '기준이 높고 직설적. 타협을 모르는 완벽주의자로, 화가 나면 불닭처럼 매워진다. 솔직함이 무기.',
+    tags: ['#완벽주의', '#직설화법', '#기준이높아'] },
+  { id: 'rooster_yin',   emoji: '🐓', title: '새벽닭',         subtitle: '혼자 담고 혼자 실망하는 타입',
+    desc: '완벽주의인데 말 안 하고 혼자 다 담음. 기준치 높이고 실망도 혼자서. 직관력이 날카로운 속 깊은 타입.',
+    tags: ['#속앓이형', '#말없는완벽주의', '#혼자기대혼자실망'] },
+  { id: 'rooster_earth', emoji: '🐓', title: '모닝닭',         subtitle: '루틴이 곧 생명인 타입',
+    desc: '규칙적이고 성실함. 루틴이 흔들리면 하루가 무너짐. 계획대로 될 때 가장 행복한 안정형.',
+    tags: ['#루틴생명', '#성실함갑', '#계획이곧나'] },
+
+  // ── 개 (year%12=2) ──
+  { id: 'dog_yang',  emoji: '🐕', title: '불개',               subtitle: '의리+열정으로 사는 타입',
+    desc: '내 사람한테는 불같이 헌신. 배신을 당하면 폭발이지만, 그 충직함이 진짜 매력인 타입.',
+    tags: ['#의리파', '#충성심100', '#배신하지마'] },
+  { id: 'dog_yin',   emoji: '🐕', title: '감시견',             subtitle: '말없이 다 지켜보는 타입',
+    desc: '말없이 모든 걸 관찰하는 타입. 한번 믿으면 끝까지, 하지만 믿기까지가 오래 걸리는 신중한 충직함.',
+    tags: ['#관찰형', '#신중한신뢰', '#다보고있어'] },
+  { id: 'dog_earth', emoji: '🐕', title: '동네 개',            subtitle: '누구나 좋아하는 만능 친화력',
+    desc: '어디 가든 사랑받는 타입. 친근하고 따뜻해서 금방 친해지고, 관계에서 갈등이 없는 만인의 친구.',
+    tags: ['#친화력갑', '#사랑받는타입', '#만인의친구'] },
+
+  // ── 돼지 (year%12=3) ──
+  { id: 'pig_yang',  emoji: '🐷', title: '불돼지',             subtitle: '욕심과 열정이 함께 끓는 타입',
+    desc: '좋아하는 건 다 해야 직성이 풀림. 욕심과 열정이 같이 끓어서 에너지가 넘치는 전방위 활력형.',
+    tags: ['#욕심쟁이', '#열정폭발', '#다하고싶어'] },
+  { id: 'pig_yin',   emoji: '🐷', title: '복돼지',             subtitle: '운이 따르는 행운의 타입',
+    desc: '뭘 해도 어떻게든 풀리는 천운 타입. 낙천적이고 운이 따르며 주변도 밝게 만드는 행운의 마스코트.',
+    tags: ['#천운타입', '#낙천주의', '#어떻게든됨'] },
+  { id: 'pig_earth', emoji: '🐷', title: '풍요 돼지',          subtitle: '넉넉하게 다 챙겨주는 타입',
+    desc: '넉넉하고 여유로운 성격. 나보다 주변을 먼저 챙기는 따뜻한 복덩이. 있는 것을 나누는 타입.',
+    tags: ['#베푸는타입', '#복덩이', '#풍요롭게'] },
+
+  // ── 쥐 (year%12=4) ──
+  { id: 'rat_yang',  emoji: '🐭', title: '번개 쥐',            subtitle: '아이디어가 번개처럼 튀는 타입',
+    desc: '아이디어가 폭발하고 입이 먼저. 실행이 나중이지만 결국 해냄. 주변 분위기를 환기시키는 존재.',
+    tags: ['#아이디어뱅크', '#입이먼저', '#번개같은반응'] },
+  { id: 'rat_yin',   emoji: '🐭', title: '스텔스 쥐',          subtitle: '조용히 3수 앞 읽는 타입',
+    desc: '조용히 모든 걸 관찰하고 이미 결론을 낸 상태. 겉은 가만히 있어도 속은 풀가동 중인 두뇌형.',
+    tags: ['#관찰의신', '#속으로계산중', '#겉조용속야망'] },
+  { id: 'rat_earth', emoji: '🐭', title: '생존왕 쥐',          subtitle: '어디서나 살아남는 적응 끝판왕',
+    desc: '어떤 환경에서도 살아남는 적응의 신. 눈치와 유연함으로 위기를 기회로 만드는 현실형 천재.',
+    tags: ['#적응왕', '#생존본능', '#눈치만렙'] },
+
+  // ── 소 (year%12=5) ──
+  { id: 'ox_yang',  emoji: '🐄', title: '용암 소',             subtitle: '겉은 조용 속은 용암 타입',
+    desc: '겉은 얌전하고 조용한데 속에 불길이 있음. 한번 터지면 진짜 무서운 타입. 참을 만큼 참았다면 조심.',
+    tags: ['#겉조용속폭발', '#용암기질', '#참다참다터짐'] },
+  { id: 'ox_yin',   emoji: '🐄', title: '철벽 소',             subtitle: '한번 결심하면 절대 안 바뀌는 타입',
+    desc: '한번 마음먹으면 절대 안 바뀜. 설득도 협상도 불가. 집념의 대명사이자 의지력의 화신.',
+    tags: ['#집념의화신', '#철벽마인드', '#설득불가'] },
+  { id: 'ox_earth', emoji: '🐄', title: '대지 소',             subtitle: '묵묵히 가장 멀리 가는 타입',
+    desc: '화려하지 않아도 결국 제일 멀리 가는 타입. 뚝심과 성실함으로 인생을 개척하는 묵묵한 강자.',
+    tags: ['#뚝심형', '#성실함의끝', '#묵묵히나아감'] },
+
+  // ── 호랑이 (year%12=6) ──
+  { id: 'tiger_yang',  emoji: '🐯', title: '불호랑이',         subtitle: '열정+추진력 지금 당장 타입',
+    desc: '열정과 추진력이 넘쳐서 기다리지 못함. 지금 당장 해야 직성이 풀리는 행동파. 목표 달성률 최강.',
+    tags: ['#행동파', '#지금당장', '#추진력갑'] },
+  { id: 'tiger_yin',   emoji: '🐯', title: '야행 호랑이',      subtitle: '밤이 되면 본성 드러나는 타입',
+    desc: '낮엔 얌전하다가 밤이 되면 진짜 내가 나옴. 혼자일 때 에너지와 집중력이 최고치인 은밀한 타입.',
+    tags: ['#야행성', '#밤에진짜나', '#낮과밤이달라'] },
+  { id: 'tiger_earth', emoji: '🐯', title: '의리 호랑이',      subtitle: '자기 사람은 끝까지 지키는 타입',
+    desc: '자기 사람한테는 어떤 상황에서도 끝까지. 의리 하나로 살아가는 진짜 친구의 정석.',
+    tags: ['#의리최강', '#자기사람챙기기', '#배신안해'] },
+
+  // ── 토끼 (year%12=7) ──
+  { id: 'rabbit_yang',  emoji: '🐰', title: '핑크 토끼',       subtitle: '감성+활력 동시 폭발 타입',
+    desc: '귀여운 것, 예쁜 것에 약하고 감성과 활력이 동시에 폭발. 표현력과 공감 능력이 탁월한 감성형.',
+    tags: ['#감성폭발', '#귀여운거최고', '#표현력갑'] },
+  { id: 'rabbit_yin',   emoji: '🐰', title: '새벽 토끼',       subtitle: '예민한 감성이 삶의 전부인 타입',
+    desc: '예민하고 섬세한 감성파. 새벽 혼자 있는 시간이 진짜 나이고, 그때 충전이 되는 내향 감성형.',
+    tags: ['#감성충만', '#혼자가필요해', '#예민한감수성'] },
+  { id: 'rabbit_earth', emoji: '🐰', title: '솜털 토끼',       subtitle: '갈등 싫어하는 평화주의 타입',
+    desc: '부드럽고 공감 잘 하는 평화주의자. 갈등이 싫고 모두와 사이좋게 지내는 세상의 윤활유.',
+    tags: ['#평화주의', '#갈등싫어', '#모두와좋게'] },
+
+  // ── 용 (year%12=8) ──
+  { id: 'dragon_yang',  emoji: '🐉', title: '불용',            subtitle: '등장만으로 분위기 장악 타입',
+    desc: '카리스마와 열정의 조합. 등장만으로 분위기가 달라지는 존재감 끝판왕. 스케일이 다른 삶을 삶.',
+    tags: ['#카리스마폭발', '#존재감갑', '#분위기장악'] },
+  { id: 'dragon_yin',   emoji: '🐉', title: '심해 용',         subtitle: '비밀 많은 내면의 야망가 타입',
+    desc: '표면은 조용하지만 내면의 야망이 심해처럼 깊음. 비밀이 많고 직관이 탁월한 신비형.',
+    tags: ['#비밀의야망', '#심해같은속', '#직관력MAX'] },
+  { id: 'dragon_earth', emoji: '🐉', title: '구름 용',         subtitle: '꿈이 너무 커서 현실이 버거운 타입',
+    desc: '이상주의적이고 몽환적. 꿈이 너무 크고 이상이 높아서 현실과 자주 충돌하는 로망 충만형.',
+    tags: ['#이상주의자', '#꿈이너무커', '#몽환적인나'] },
+
+  // ── 뱀 (year%12=9) ──
+  { id: 'snake_yang',  emoji: '🐍', title: '불뱀',             subtitle: '한번 꽂히면 강렬하게 집착하는 타입',
+    desc: '신비롭지만 불같은 열정. 한번 마음에 들면 강렬하게 빠져드는 집착과 열정의 타입.',
+    tags: ['#강렬한집착', '#불같은열정', '#신비로운매력'] },
+  { id: 'snake_yin',   emoji: '🐍', title: '얼음 뱀',          subtitle: '차갑지만 직관이 탁월한 타입',
+    desc: '차갑고 계산적으로 보이지만 속은 섬세함. 직관력이 탁월하고 상황 파악이 남들보다 빠른 타입.',
+    tags: ['#얼음외모', '#섬세한속', '#직관력끝판'] },
+  { id: 'snake_earth', emoji: '🐍', title: '흙뱀',             subtitle: '느리지만 절대 포기 않는 타입',
+    desc: '느려 보여도 자기 속도로 묵묵히 나아가는 타입. 절대 포기하지 않는 끈기의 화신.',
+    tags: ['#묵묵히', '#포기없어', '#내속도가맞아'] },
+
+  // ── 말 (year%12=10) ──
+  { id: 'horse_yang',  emoji: '🐴', title: '불말',             subtitle: '가만히 있으면 오히려 고통인 타입',
+    desc: '에너지 넘치고 자유를 사랑함. 가만히 있는 게 오히려 스트레스인 행동 중독 자유형.',
+    tags: ['#자유영혼', '#에너지폭발', '#움직여야산다'] },
+  { id: 'horse_yin',   emoji: '🐴', title: '달밤 말',          subtitle: '활발해 보이지만 혼자가 필요한 타입',
+    desc: '겉으로는 활발하고 사교적이지만 혼자만의 시간이 절대적으로 필요한 내향 외향 혼합형.',
+    tags: ['#AMBI형', '#혼자가필요해', '#겉활발속고독'] },
+  { id: 'horse_earth', emoji: '🐴', title: '들말',             subtitle: '자유롭지만 관계에선 진지한 타입',
+    desc: '자유분방하고 거침없지만 진짜 중요한 관계에서만큼은 의외로 꽤 진지하고 책임감 있음.',
+    tags: ['#자유플러스책임', '#겉자유속진지', '#관계에선진심'] },
+
+  // ── 양 (year%12=11) ──
+  { id: 'goat_yang',  emoji: '🐑', title: '불양',              subtitle: '온순해 보이지만 속엔 강단 타입',
+    desc: '온순해 보이지만 한번 밀리면 끝까지 가는 강단이 있음. 양 탈 쓴 늑대. 의외성 MAX.',
+    tags: ['#양탈늑대', '#의외의강단', '#밀리면끝까지'] },
+  { id: 'goat_yin',   emoji: '🐑', title: '안개 양',           subtitle: '감성이 삶의 전부인 예술형 타입',
+    desc: '몽환적이고 예술적 감수성이 풍부. 음악과 감성 없이는 못 사는 예술혼 충만 타입.',
+    tags: ['#감성예술형', '#음악없이못살아', '#몽환감성'] },
+  { id: 'goat_earth', emoji: '🐑', title: '목장 양',           subtitle: '모두와 사이좋게 사는 평화주의 타입',
+    desc: '평화를 사랑하고 모두와 사이좋게 지내는 따뜻한 타입. 갈등이 제일 무섭고 함께가 행복.',
+    tags: ['#평화주의자', '#갈등싫어', '#다같이행복'] },
 ];
 
-// 유형별 참여 통계 (사주 기반 시뮬레이션)
+// 유형별 참여 통계 (사주 시뮬레이션 기반 시드값)
 const TYPE_STATS: Record<string, number> = {
-  digital:   24,
-  thinker:   19,
-  sleepy:    15,
-  emotional: 13,
-  foodie:    10,
-  social:     8,
-  daily:      6,
-  energy:     3,
-  chaotic:    2,
+  monkey_yang: 3.2, monkey_yin: 2.7, monkey_earth: 2.0,
+  rooster_yang: 3.5, rooster_yin: 2.8, rooster_earth: 2.2,
+  dog_yang: 3.1, dog_yin: 2.6, dog_earth: 2.4,
+  pig_yang: 2.9, pig_yin: 2.5, pig_earth: 2.1,
+  rat_yang: 3.8, rat_yin: 3.1, rat_earth: 2.4,
+  ox_yang: 3.0, ox_yin: 2.7, ox_earth: 2.5,
+  tiger_yang: 3.6, tiger_yin: 3.0, tiger_earth: 2.3,
+  rabbit_yang: 3.3, rabbit_yin: 2.9, rabbit_earth: 2.1,
+  dragon_yang: 3.5, dragon_yin: 2.9, dragon_earth: 2.2,
+  snake_yang: 3.0, snake_yin: 2.6, snake_earth: 1.9,
+  horse_yang: 3.2, horse_yin: 2.8, horse_earth: 2.4,
+  goat_yang: 3.1, goat_yin: 2.7, goat_earth: 2.0,
 };
 const TOTAL_PLAYERS = 14293;
 
-function getPersonalityType(items: Ingredient[]) {
-  const counts: Record<string, number> = {};
-  items.forEach(i => { counts[i.category] = (counts[i.category] || 0) + 1; });
-  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  const topCount = sorted[0]?.[1] ?? 0;
-  // 모든 재료가 다른 카테고리일 때만 카오스
-  if (topCount === 1) return PERSONALITY_TYPES.find(p => p.id === 'chaotic')!;
-  const topCat = sorted[0][0];
-  return PERSONALITY_TYPES.find(p => p.dominant.includes(topCat))
-    ?? PERSONALITY_TYPES.find(p => p.id === 'chaotic')!;
+// 12간지(zodiacIdx 0~11) × 오행 기질(tier: 0=양기木火, 1=음기金水, 2=중심土)
+function getPersonalityType(zodiacIdx: number, dominantOh: Ohaeng) {
+  const tier = (dominantOh === 'wood' || dominantOh === 'fire') ? 0
+    : (dominantOh === 'water' || dominantOh === 'metal') ? 1 : 2;
+  return PERSONALITY_TYPES[zodiacIdx * 3 + tier];
 }
 
 function getCategoryBreakdown(items: Ingredient[]) {
@@ -687,9 +792,10 @@ export default function GodGame() {
   }, [phase]);
 
   useEffect(() => {
-    if (!showResult || hasRecordedRef.current) return;
+    if (!showResult || hasRecordedRef.current || !dominantOh) return;
     hasRecordedRef.current = true;
-    const pt = getPersonalityType(selected);
+    const zi = ((parseInt(yearInput) % 12) + 12) % 12;
+    const pt = getPersonalityType(zi, dominantOh);
     recordResult(pt.id);
     setStatsLoading(true);
     fetchLiveStats().then(data => {
@@ -861,7 +967,8 @@ export default function GodGame() {
   }, [clearAllTimers]);
 
   const handleShare = useCallback(async () => {
-    const pt = getPersonalityType(selected);
+    const zi = ((parseInt(yearInput) % 12) + 12) % 12;
+    const pt = dominantOh ? getPersonalityType(zi, dominantOh) : PERSONALITY_TYPES[0];
     try {
       const blob = await generateShareImage(userName || '나', pt, selected, accidentals, emptyBottles);
       const file = new File([blob], '신이나를만들때.png', { type: 'image/png' });
@@ -906,7 +1013,8 @@ export default function GodGame() {
   }, [yearInput, monthInput, dayInput, userName]);
 
   const fillPct = (selected.length / MAX) * 100;
-  const personality = showResult ? getPersonalityType(selected) : null;
+  const _zodiacIdx = yearInput ? ((parseInt(yearInput) % 12) + 12) % 12 : 0;
+  const personality = showResult && dominantOh ? getPersonalityType(_zodiacIdx, dominantOh) : null;
   const breakdown = personality ? getCategoryBreakdown(selected) : [];
   const liquidColor = fillPct <= 20 ? '#7BB8F5' : fillPct <= 40 ? '#5CB85C'
     : fillPct <= 60 ? '#9B7FE0' : fillPct <= 80 ? '#F5A83C' : '#FF4040';
