@@ -96,7 +96,7 @@ function getCategoryBreakdown(items: Ingredient[]) {
   const counts: Record<string, number> = {};
   items.forEach(i => { counts[i.category] = (counts[i.category] || 0) + 1; });
   return Object.entries(counts)
-    .map(([cat, count]) => ({ cat, count, pct: Math.round((count / items.length) * 100) }))
+    .map(([cat, count]) => ({ cat, count, pct: Math.round((count / items.length) * 1000) / 10 }))
     .sort((a, b) => b.count - a.count);
 }
 
@@ -382,6 +382,26 @@ const ING_TOOLTIP: Record<string, string> = {
   fitness:   '火(화) — 운동은 火의 활동 에너지. 심장과 체온을 높이는 양기(陽氣).',
   sensitive: '水(수) — 水는 智慧와 감지력. 물처럼 모든 것을 감지하는 능력.',
 };
+
+function getAccidentReason(ingId: string, dominant: Ohaeng): string {
+  const ingOh = ING_OHAENG[ingId];
+  if (!ingOh) return '';
+  const KR: Record<Ohaeng, string> = { wood: '목(木)', fire: '화(火)', earth: '토(土)', metal: '금(金)', water: '수(水)' };
+  const d = KR[dominant], i = KR[ingOh];
+  if (ingOh === dominant)
+    return `사주에 ${d} 기운이 넘쳐흘러 같은 기운의 재료까지 끌어당겼어요. 동기상응(同氣相應)!`;
+  // dominant generates ingOh
+  if (OH_SHENG[dominant] === ingOh)
+    return `사주의 ${d}이 ${i}를 낳는 상생(相生) 관계 — 넘치는 기운이 실수를 불렀어요.`;
+  // ingOh generates dominant
+  if (OH_SHENG[ingOh] === dominant)
+    return `${i}이 ${d}을 도와주려다 과하게 흘러들어왔어요. 상생이 지나치면 실수가 돼요.`;
+  // dominant controls ingOh
+  if (OH_KE[dominant] === ingOh)
+    return `사주의 ${d}이 ${i}를 극(克)하려다 오히려 과잉 반응 — 억누를수록 더 튀어나와요.`;
+  // ingOh controls dominant
+  return `${i}이 ${d}을 극(克)하는 관계 — 억눌린 기운이 실수처럼 폭발했어요.`;
+}
 
 // ── 오행 궁합(相生·相剋) ──
 const OH_SHENG: Record<Ohaeng, Ohaeng> = {
@@ -893,9 +913,9 @@ export default function GodGame() {
   const displayName = userName || '나';
 
   return (
-    <div style={css.root}>
+    <div style={{ ...css.root, background: phase === 'intro' ? '#F5EFE0' : 'linear-gradient(160deg, #0D0820 0%, #1A0D38 50%, #0D1830 100%)' }}>
       {/* 별 */}
-      {STARS.map((s, i) => (
+      {phase !== 'intro' && STARS.map((s, i) => (
         <div key={i} style={{
           position: 'absolute', left: s.left, top: s.top, color: 'white',
           fontSize: s.size, animationName: 'twinkle', animationDuration: s.dur,
@@ -907,7 +927,6 @@ export default function GodGame() {
       {/* ── 인트로 ── */}
       {phase === 'intro' && (
         <div style={css.introScreen}>
-          <div style={css.introBadge}>🧬 밈 게임</div>
           <h1 style={{ ...css.introTitle } as CSSProperties} className="title-pop">
             신이 나를 만들 때 🧪
           </h1>
@@ -1427,6 +1446,11 @@ export default function GodGame() {
                         <div style={css.ingTooltip}>
                           <span style={{ color: OHAENG_COLOR[ING_OHAENG[ing.id]] }}>{OHAENG_KR[ING_OHAENG[ing.id]]}</span>
                           <br/>{ING_TOOLTIP[ing.id]}
+                          {accidentals.has(ing.id) && dominantOh && (
+                            <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid rgba(155,127,224,0.3)', color: '#FFCC80', fontSize: 10, lineHeight: 1.5 }}>
+                              💥 왜 실수로 들어갔냐면: {getAccidentReason(ing.id, dominantOh)}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1442,7 +1466,7 @@ export default function GodGame() {
                     <div style={css.barTrack}>
                       <div style={{ ...css.barFill, width: `${b.pct}%`, background: CAT_COLOR[b.cat] ?? '#9B7FE0' }} />
                     </div>
-                    <span style={css.barPct}>{b.pct}%</span>
+                    <span style={css.barPct}>{b.pct.toFixed(1)}%</span>
                   </div>
                 ))}
               </div>
@@ -1483,7 +1507,7 @@ export default function GodGame() {
               <button style={css.copyLinkBtn} onClick={handleCopyLink}>
                 {linkCopied ? '✅ 링크 복사됨!' : '🔗 결과 링크 복사'}
               </button>
-              <button style={css.compatBtn} onClick={() => setShowCompat(true)}>
+              <button style={css.compatBtn} onClick={() => { setShowCompat(true); setCompatResult(null); setCompatZodiac(null); setCompatYear(''); setCompatMonth(''); setCompatDay(''); }}>
                 💕 궁합 보기 (오행 상생·상극)
               </button>
               <button style={css.statsBtn} onClick={() => setShowStats(true)}>
@@ -1518,11 +1542,11 @@ const css: Record<string, CSSProperties> = {
     border: '1px solid rgba(155,127,224,0.4)',
   },
   introTitle: {
-    fontSize: 28, fontWeight: 900, color: '#fff',
+    fontSize: 28, fontWeight: 900, color: '#2C1810',
     textAlign: 'center', letterSpacing: -0.5, lineHeight: 1.3,
   },
   introSub: {
-    fontSize: 13, color: 'rgba(255,255,255,0.5)', textAlign: 'center',
+    fontSize: 13, color: 'rgba(50,25,0,0.55)', textAlign: 'center',
   },
   introGodWrap: {
     position: 'relative', display: 'flex', flexDirection: 'column',
@@ -1537,14 +1561,14 @@ const css: Record<string, CSSProperties> = {
   },
   startBtn: {
     marginTop: 16,
-    background: '#9B7FE0', border: '3px solid #fff', borderRadius: 16,
+    background: '#9B7FE0', border: '3px solid #2C1810', borderRadius: 16,
     padding: '16px 48px', color: '#fff', fontSize: 18, fontWeight: 900,
     cursor: 'pointer', letterSpacing: 1,
-    boxShadow: '4px 4px 0px rgba(0,0,0,0.4)',
+    boxShadow: '4px 4px 0px rgba(0,0,0,0.3)',
     transition: 'transform 0.1s',
   },
   introWarning: {
-    fontSize: 11, color: 'rgba(255,200,100,0.7)', textAlign: 'center',
+    fontSize: 11, color: 'rgba(120,70,10,0.75)', textAlign: 'center',
     marginTop: 8, fontStyle: 'italic',
   },
 
@@ -1855,7 +1879,7 @@ const css: Record<string, CSSProperties> = {
   barLabel: { fontSize: 11, color: 'rgba(255,255,255,0.6)', width: 90, flexShrink: 0 },
   barTrack: { flex: 1, height: 8, background: 'rgba(255,255,255,0.08)', borderRadius: 4, overflow: 'hidden' },
   barFill: { height: '100%', borderRadius: 4, transition: 'width 0.5s ease' },
-  barPct: { fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.8)', width: 34, textAlign: 'right' },
+  barPct: { fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.8)', width: 42, textAlign: 'right' },
 
   descBox: { background: 'rgba(255,255,255,0.05)', borderRadius: 14, padding: 16, marginBottom: 12 },
   descText: { fontSize: 14, color: 'rgba(255,255,255,0.82)', lineHeight: 1.65 },
