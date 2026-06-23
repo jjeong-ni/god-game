@@ -99,6 +99,192 @@ function getCategoryBreakdown(items: Ingredient[]) {
     .sort((a, b) => b.count - a.count);
 }
 
+// ── Supabase 실시간 통계 ──
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
+
+async function recordResult(typeId: string): Promise<void> {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return;
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/game_results`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal',
+      },
+      body: JSON.stringify({ type_id: typeId }),
+    });
+  } catch { /* silent */ }
+}
+
+async function fetchLiveStats(): Promise<{ stats: Record<string, number>; total: number } | null> {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return null;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/game_results?select=type_id`, {
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
+    });
+    if (!res.ok) return null;
+    const data: { type_id: string }[] = await res.json();
+    const total = data.length;
+    if (total === 0) return null;
+
+    const counts: Record<string, number> = {};
+    for (const { type_id } of data) counts[type_id] = (counts[type_id] ?? 0) + 1;
+
+    const stats: Record<string, number> = {};
+    for (const pt of PERSONALITY_TYPES) stats[pt.id] = Math.round(((counts[pt.id] ?? 0) / total) * 100);
+
+    const sum = Object.values(stats).reduce((a, b) => a + b, 0);
+    if (sum !== 100) {
+      const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0];
+      if (top) stats[top] = (stats[top] ?? 0) + (100 - sum);
+    }
+    return { stats, total };
+  } catch { return null; }
+}
+
+// ── 결과 이미지 생성 (Canvas) ──
+async function generateShareImage(
+  userName: string,
+  personality: { emoji: string; title: string; subtitle: string; tags: readonly string[] },
+  selected: Ingredient[],
+  accidentals: Set<string>,
+  emptyBottles: Set<string>,
+): Promise<Blob> {
+  const W = 1080;
+  const P = 72;
+  const SYS = "-apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif";
+
+  // 1pass: chip row count for height calculation
+  const tmp = document.createElement('canvas');
+  tmp.width = W; tmp.height = 10;
+  const mc = tmp.getContext('2d')!;
+  mc.font = `700 28px ${SYS}`;
+  let cx = P, chipRows = 1;
+  for (const ing of selected) {
+    const label = `${ing.emoji} ${ing.name}${emptyBottles.has(ing.id) ? ' 💧' : accidentals.has(ing.id) ? ' 💥' : ''}`;
+    const cw = mc.measureText(label).width + 36;
+    if (cx + cw > W - P) { cx = P; chipRows++; }
+    cx += cw + 10;
+  }
+  const bd = getCategoryBreakdown(selected);
+  const H = P + 54 + 28 + 54 + 36 + 300 + 44 + 44 + 20 + chipRows * 78 + 40 + 44 + 20 + bd.length * 46 + 30 + 36 + 18 + 44 + P + 40;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d')!;
+
+  // Background
+  const bg = ctx.createLinearGradient(0, 0, W * 0.8, H);
+  bg.addColorStop(0, '#0D0820'); bg.addColorStop(0.5, '#1A0D38'); bg.addColorStop(1, '#0D1830');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+  // Decorative stars
+  ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = '22px serif'; ctx.textAlign = 'center';
+  [[60,100],[1020,150],[80,550],[1000,520],[190,H-120],[890,H-100]].forEach(([sx,sy]) => ctx.fillText('✦', sx, sy));
+
+  const rr = (x: number, y: number, w: number, h: number, r: number) => {
+    ctx.beginPath();
+    ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+    ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+    ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+    ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
+  };
+
+  let y = P;
+
+  // Badge
+  ctx.font = `700 28px ${SYS}`;
+  const bw = ctx.measureText('🧬 밈 게임').width + 48;
+  rr((W-bw)/2, y, bw, 54, 27);
+  ctx.fillStyle = 'rgba(155,127,224,0.25)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(155,127,224,0.5)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = '#C4ADFF'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('🧬 밈 게임', W/2, y+27);
+  y += 54+28;
+
+  // Title
+  ctx.font = `900 44px ${SYS}`; ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText(`신이 ${userName}을(를) 만들 때 🧪`, W/2, y+44);
+  y += 54+36;
+
+  // Type card
+  rr(P, y, W-P*2, 300, 44);
+  const cg = ctx.createLinearGradient(P, y, W-P, y+300);
+  cg.addColorStop(0, 'rgba(155,127,224,0.3)'); cg.addColorStop(1, 'rgba(107,181,255,0.15)');
+  ctx.fillStyle = cg; ctx.fill();
+  ctx.strokeStyle = 'rgba(155,127,224,0.4)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.font = '130px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(personality.emoji, W/2, y+148);
+  ctx.font = `900 50px ${SYS}`; ctx.fillStyle = '#fff'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText(personality.title, W/2, y+232);
+  ctx.font = `400 30px ${SYS}`; ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.fillText(`"${personality.subtitle}"`, W/2, y+278);
+  y += 300+44;
+
+  // Ingredients header
+  ctx.font = `700 32px ${SYS}`; ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText('📦 신이 넣은 재료', P, y+32);
+  y += 44+20;
+
+  // Ingredient chips
+  let chipX = P;
+  ctx.font = `700 28px ${SYS}`;
+  for (const ing of selected) {
+    const isAcc = accidentals.has(ing.id), isEmpty = emptyBottles.has(ing.id);
+    const label = `${ing.emoji} ${ing.name}${isEmpty ? ' 💧' : isAcc ? ' 💥' : ''}`;
+    const cw = ctx.measureText(label).width + 36;
+    if (chipX + cw > W - P) { chipX = P; y += 78; }
+    rr(chipX, y, cw, 64, 16);
+    ctx.fillStyle = isEmpty ? 'rgba(100,180,255,0.12)' : isAcc ? 'rgba(255,80,80,0.15)' : 'rgba(155,127,224,0.22)'; ctx.fill();
+    ctx.strokeStyle = isEmpty ? 'rgba(100,180,255,0.35)' : isAcc ? 'rgba(255,80,80,0.35)' : 'rgba(155,127,224,0.4)'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, chipX+18, y+32);
+    chipX += cw+10;
+  }
+  y += 64+40;
+
+  // Breakdown header
+  ctx.font = `700 32px ${SYS}`; ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText('📊 성분 비율 분석', P, y+32);
+  y += 44+20;
+
+  const btW = W - P*2 - 170 - 70;
+  for (const b of bd) {
+    ctx.font = `400 26px ${SYS}`; ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(CAT_NAME[b.cat] ?? b.cat, P, y+10);
+    rr(P+170, y, btW, 20, 10); ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fill();
+    const fw = Math.max((btW * b.pct) / 100, 18);
+    rr(P+170, y, fw, 20, 10); ctx.fillStyle = CAT_COLOR[b.cat] ?? '#9B7FE0'; ctx.fill();
+    ctx.font = `700 24px ${SYS}`; ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.textAlign = 'right'; ctx.fillText(`${b.pct}%`, W-P, y+10);
+    y += 20+26;
+  }
+  y += 30;
+
+  // Tags & hashtag
+  ctx.font = `600 28px ${SYS}`; ctx.fillStyle = '#D4BFFF'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText(personality.tags.join('  '), W/2, y+28); y += 36+18;
+  ctx.font = `900 36px ${SYS}`; ctx.fillStyle = '#fff';
+  ctx.fillText('#신이나를만들때', W/2, y+36); y += 44;
+
+  // Bottom
+  ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(P, H-64, W-P*2, 1);
+  ctx.font = `400 24px ${SYS}`; ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('신이나를만들때.vercel.app', W/2, H-36);
+
+  return new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('blob')), 'image/png')
+  );
+}
+
 // ── 12지신 사주명리학 ──
 const ZODIAC = [
   { name: '원숭이', emoji: '🐒', primary: 'talkative' },
@@ -251,6 +437,10 @@ export default function GodGame() {
   const [particles, setParticles] = useState<{ id: number; px: number; py: number; emoji: string }[]>([]);
   const [showResult, setShowResult] = useState(false);
   const [showStats, setShowStats] = useState(false);
+  const [liveStats, setLiveStats] = useState<Record<string, number>>(TYPE_STATS);
+  const [liveTotalPlayers, setLiveTotalPlayers] = useState(TOTAL_PLAYERS);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const hasRecordedRef = useRef(false);
 
   const [godSpeech, setGodSpeech] = useState('');
   const [showSpeech, setShowSpeech] = useState(false);
@@ -276,6 +466,18 @@ export default function GodGame() {
     const t = setTimeout(() => setNamingStep(1), 400);
     return () => clearTimeout(t);
   }, [phase]);
+
+  useEffect(() => {
+    if (!showResult || hasRecordedRef.current) return;
+    hasRecordedRef.current = true;
+    const pt = getPersonalityType(selected);
+    recordResult(pt.id);
+    setStatsLoading(true);
+    fetchLiveStats().then(data => {
+      if (data) { setLiveStats(data.stats); setLiveTotalPlayers(data.total); }
+      setStatsLoading(false);
+    });
+  }, [showResult, selected]);
 
   // 이름 확인
   const handleNameSubmit = useCallback(() => {
@@ -415,37 +617,32 @@ export default function GodGame() {
     setGodSvgType('idle'); setGodClass(''); setBeakerClass(''); setFlashClass('');
     setParticles([]); setShowResult(false); setShowStats(false); setBouncingId(null);
     setAccidentals(new Set()); setEmptyBottles(new Set());
+    hasRecordedRef.current = false;
+    setLiveStats(TYPE_STATS); setLiveTotalPlayers(TOTAL_PLAYERS); setStatsLoading(false);
     setGodSpeech(''); setShowSpeech(false); setAccidentFlash(null);
     setPhase('intro');
   }, [clearAllTimers]);
 
   const handleShare = useCallback(async () => {
     const pt = getPersonalityType(selected);
-    const bd = getCategoryBreakdown(selected);
-    const text = [
-      `🧪 신이 ${userName || '나'}을(를) 만들 때`,
-      '',
-      `${pt.emoji} ${pt.title}`,
-      `"${pt.subtitle}"`,
-      '',
-      `📦 내 재료: ${selected.map(i => `${i.emoji}${i.name}`).join(' · ')}`,
-      '',
-      '📊 성분 분석:',
-      ...bd.map(b => `${CAT_NAME[b.cat]} ${b.pct}%`),
-      '',
-      pt.tags.join(' '),
-      '',
-      '#신이나를만들때',
-    ].join('\n');
     try {
-      if (typeof navigator !== 'undefined' && navigator.share) {
-        await navigator.share({ title: `신이 ${userName || '나'}을(를) 만들 때 🧪`, text });
-      } else if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        await navigator.clipboard.writeText(text);
-        alert('📋 클립보드에 복사됐어요!');
+      const blob = await generateShareImage(userName || '나', pt, selected, accidentals, emptyBottles);
+      const file = new File([blob], '신이나를만들때.png', { type: 'image/png' });
+      if (
+        typeof navigator !== 'undefined' &&
+        navigator.share &&
+        typeof navigator.canShare === 'function' &&
+        navigator.canShare({ files: [file] })
+      ) {
+        await navigator.share({ files: [file], title: `신이 ${userName || '나'}을(를) 만들 때 🧪` });
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = '신이나를만들때.png'; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
       }
     } catch { /* cancel */ }
-  }, [selected, userName]);
+  }, [selected, userName, accidentals, emptyBottles]);
 
   const fillPct = (selected.length / MAX) * 100;
   const personality = showResult ? getPersonalityType(selected) : null;
@@ -758,7 +955,9 @@ export default function GodGame() {
               <div style={css.statsHeader}>
                 <button style={css.statsBackBtn} onClick={() => setShowStats(false)}>← 돌아가기</button>
                 <h2 style={css.statsTitle}>🏆 유형 분포</h2>
-                <p style={css.statsSubtitle}>총 {TOTAL_PLAYERS.toLocaleString()}명 참여</p>
+                <p style={css.statsSubtitle}>
+                  {statsLoading ? '통계 불러오는 중...' : `총 ${liveTotalPlayers.toLocaleString()}명 참여`}
+                </p>
               </div>
 
               {/* 내 유형 하이라이트 */}
@@ -767,9 +966,9 @@ export default function GodGame() {
                 <div>
                   <div style={css.myTypeTitle}>{personality.title}</div>
                   <div style={css.myTypeRank}>
-                    전체의 {TYPE_STATS[personality.id] ?? 0}% ·{' '}
+                    전체의 {liveStats[personality.id] ?? 0}% ·{' '}
                     {[...PERSONALITY_TYPES]
-                      .sort((a, b) => (TYPE_STATS[b.id] ?? 0) - (TYPE_STATS[a.id] ?? 0))
+                      .sort((a, b) => (liveStats[b.id] ?? 0) - (liveStats[a.id] ?? 0))
                       .findIndex(p => p.id === personality.id) + 1}위
                   </div>
                 </div>
@@ -778,9 +977,9 @@ export default function GodGame() {
               {/* 전체 유형 리스트 */}
               <div style={css.statsListWrapper}>
                 {[...PERSONALITY_TYPES]
-                  .sort((a, b) => (TYPE_STATS[b.id] ?? 0) - (TYPE_STATS[a.id] ?? 0))
+                  .sort((a, b) => (liveStats[b.id] ?? 0) - (liveStats[a.id] ?? 0))
                   .map((type, rank) => {
-                    const pct = TYPE_STATS[type.id] ?? 0;
+                    const pct = liveStats[type.id] ?? 0;
                     const isMe = type.id === personality.id;
                     return (
                       <div key={type.id} style={{ ...css.statsRow, ...(isMe ? css.statsRowMe : {}) }}>
@@ -804,7 +1003,9 @@ export default function GodGame() {
                 }
               </div>
 
-              <p style={css.statsFooter}>* 사주명리학 기반 시뮬레이션 데이터</p>
+              <p style={css.statsFooter}>
+                {SUPABASE_URL ? '* 실제 참여자 데이터 기반' : '* 사주명리학 기반 시뮬레이션 데이터'}
+              </p>
             </div>
           </div>
         </div>
