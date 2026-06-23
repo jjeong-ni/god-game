@@ -134,11 +134,12 @@ function selectBySaju(year: number, month: number, day: number): {
   const seed = year * 10000 + month * 100 + day;
   const rand = seededRandom(seed);
 
-  const primaryIds = [
+  // 년/월/일이 같은 재료로 매핑될 수 있으므로 중복 제거
+  const primaryIds = [...new Set([
     zodiac.primary,
     MONTH_ING[month] ?? 'sleep',
     getDayIng(day),
-  ];
+  ])];
   const seen = new Set<string>(primaryIds);
   const primary = primaryIds
     .map(id => (INGREDIENTS as readonly Ingredient[]).find(i => i.id === id))
@@ -559,7 +560,9 @@ export default function GodGame() {
                 />
                 <span style={css.dateLabel}>일</span>
               </div>
-              <button style={css.rpgBtn} onClick={handleDateSubmit}>확인 ▶</button>
+              <div style={css.rpgAdvanceRow}>
+                <button style={css.rpgBtn} onClick={handleDateSubmit}>확인 ▶</button>
+              </div>
             </div>
           )}
 
