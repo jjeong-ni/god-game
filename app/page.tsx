@@ -197,11 +197,15 @@ function getPersonalityType(zodiacIdx: number, dominantOh: Ohaeng) {
   return PERSONALITY_TYPES[zodiacIdx * 3 + tier];
 }
 
-function getCategoryBreakdown(items: Ingredient[]) {
-  const counts: Record<string, number> = {};
-  items.forEach(i => { counts[i.category] = (counts[i.category] || 0) + 1; });
-  return Object.entries(counts)
-    .map(([cat, count]) => ({ cat, count, pct: Math.round((count / items.length) * 1000) / 10 }))
+function getCategoryBreakdown(items: Ingredient[], weights?: number[]) {
+  const scores: Record<string, number> = {};
+  items.forEach((i, idx) => {
+    const w = weights?.[idx] ?? 1;
+    scores[i.category] = (scores[i.category] || 0) + w;
+  });
+  const total = Object.values(scores).reduce((a, b) => a + b, 0) || 1;
+  return Object.entries(scores)
+    .map(([cat, score]) => ({ cat, count: score, pct: Math.round((score / total) * 1000) / 10 }))
     .sort((a, b) => b.count - a.count);
 }
 
@@ -258,6 +262,7 @@ async function generateShareImage(
   selected: Ingredient[],
   accidentals: Set<string>,
   emptyBottles: Set<string>,
+  selectedWeights?: number[],
 ): Promise<Blob> {
   const W = 1080;
   const P = 72;
@@ -275,7 +280,7 @@ async function generateShareImage(
     if (cx + cw > W - P) { cx = P; chipRows++; }
     cx += cw + 10;
   }
-  const bd = getCategoryBreakdown(selected);
+  const bd = getCategoryBreakdown(selected, selectedWeights);
   const H = P + 54 + 28 + 54 + 36 + 300 + 44 + 44 + 20 + chipRows * 78 + 40 + 44 + 20 + bd.length * 46 + 30 + 36 + 18 + 44 + P + 40;
 
   const canvas = document.createElement('canvas');
@@ -314,7 +319,7 @@ async function generateShareImage(
   // Title
   ctx.font = `900 44px ${SYS}`; ctx.fillStyle = '#fff';
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-  ctx.fillText(`신이 ${userName}을(를) 만들 때 🧪`, W/2, y+44);
+  ctx.fillText(`신이 ${userName}${josa을를(userName)} 만들 때 🧪`, W/2, y+44);
   y += 54+36;
 
   // Type card
@@ -642,6 +647,240 @@ function selectBySaju(year: number, month: number, day: number, hourOh: Ohaeng |
   return { ings, zodiac: { name: zodiac.name, emoji: zodiac.emoji }, dominantOh, ohScores };
 }
 
+// ── 한자 데이터베이스 (주요 이름 글자) ──────────────────────
+type HanjaOpt = { h: string; hun: string };
+const HANJA_DB: Record<string, HanjaOpt[]> = {
+  가: [{ h: '佳', hun: '아름다울' }, { h: '嘉', hun: '아름다울' }, { h: '可', hun: '옳을' }],
+  강: [{ h: '江', hun: '강' }, { h: '強', hun: '강할' }, { h: '康', hun: '편안할' }],
+  건: [{ h: '建', hun: '세울' }, { h: '健', hun: '튼튼할' }],
+  경: [{ h: '景', hun: '경치' }, { h: '敬', hun: '공경할' }, { h: '慶', hun: '경사' }, { h: '炅', hun: '빛날' }],
+  광: [{ h: '光', hun: '빛' }, { h: '廣', hun: '넓을' }],
+  규: [{ h: '奎', hun: '별' }, { h: '圭', hun: '홀' }],
+  근: [{ h: '根', hun: '뿌리' }, { h: '勤', hun: '부지런할' }],
+  기: [{ h: '基', hun: '터' }, { h: '起', hun: '일어날' }, { h: '琪', hun: '옥' }],
+  길: [{ h: '吉', hun: '길할' }],
+  남: [{ h: '南', hun: '남녘' }, { h: '男', hun: '사내' }],
+  달: [{ h: '達', hun: '통달할' }],
+  대: [{ h: '大', hun: '클' }, { h: '代', hun: '대신할' }],
+  덕: [{ h: '德', hun: '덕' }],
+  도: [{ h: '道', hun: '길' }, { h: '度', hun: '법도' }, { h: '桃', hun: '복숭아' }],
+  동: [{ h: '東', hun: '동녘' }, { h: '同', hun: '같을' }, { h: '冬', hun: '겨울' }],
+  련: [{ h: '蓮', hun: '연꽃' }],
+  령: [{ h: '令', hun: '하여금' }, { h: '靈', hun: '신령' }],
+  록: [{ h: '祿', hun: '복' }, { h: '綠', hun: '녹색' }],
+  류: [{ h: '柳', hun: '버들' }, { h: '流', hun: '흐를' }],
+  리: [{ h: '利', hun: '이로울' }, { h: '理', hun: '이치' }, { h: '李', hun: '오얏' }],
+  린: [{ h: '麟', hun: '기린' }, { h: '璘', hun: '옥빛' }],
+  만: [{ h: '萬', hun: '일만' }, { h: '滿', hun: '찰' }],
+  명: [{ h: '明', hun: '밝을' }, { h: '命', hun: '목숨' }, { h: '銘', hun: '새길' }],
+  무: [{ h: '武', hun: '굳셀' }, { h: '茂', hun: '무성할' }, { h: '務', hun: '힘쓸' }],
+  문: [{ h: '文', hun: '글' }, { h: '門', hun: '문' }],
+  미: [{ h: '美', hun: '아름다울' }, { h: '微', hun: '작을' }],
+  민: [{ h: '民', hun: '백성' }, { h: '敏', hun: '민첩할' }, { h: '旻', hun: '하늘' }, { h: '珉', hun: '옥' }],
+  박: [{ h: '朴', hun: '순박할' }, { h: '博', hun: '넓을' }],
+  범: [{ h: '範', hun: '법' }, { h: '凡', hun: '무릇' }],
+  병: [{ h: '炳', hun: '빛날' }, { h: '秉', hun: '잡을' }],
+  보: [{ h: '寶', hun: '보물' }, { h: '普', hun: '넓을' }, { h: '輔', hun: '도울' }],
+  복: [{ h: '福', hun: '복' }],
+  봉: [{ h: '奉', hun: '받들' }, { h: '鳳', hun: '봉황' }],
+  빈: [{ h: '彬', hun: '빛날' }, { h: '斌', hun: '빛날' }, { h: '賓', hun: '손님' }],
+  상: [{ h: '相', hun: '서로' }, { h: '尙', hun: '높을' }, { h: '祥', hun: '상서' }],
+  서: [{ h: '書', hun: '글' }, { h: '瑞', hun: '상서로울' }, { h: '徐', hun: '천천히' }],
+  선: [{ h: '善', hun: '착할' }, { h: '宣', hun: '베풀' }, { h: '鮮', hun: '고울' }, { h: '仙', hun: '신선' }],
+  성: [{ h: '成', hun: '이룰' }, { h: '誠', hun: '정성' }, { h: '星', hun: '별' }, { h: '聖', hun: '성인' }],
+  세: [{ h: '世', hun: '세상' }, { h: '歲', hun: '해' }],
+  소: [{ h: '小', hun: '작을' }, { h: '素', hun: '흴' }, { h: '昭', hun: '밝을' }],
+  수: [{ h: '水', hun: '물' }, { h: '秀', hun: '빼어날' }, { h: '壽', hun: '목숨' }, { h: '洙', hun: '물이름' }, { h: '守', hun: '지킬' }],
+  숙: [{ h: '淑', hun: '맑을' }, { h: '肅', hun: '엄숙할' }],
+  순: [{ h: '順', hun: '순할' }, { h: '淳', hun: '순박할' }, { h: '純', hun: '순수할' }],
+  승: [{ h: '承', hun: '이을' }, { h: '昇', hun: '오를' }, { h: '勝', hun: '이길' }],
+  시: [{ h: '始', hun: '시작' }, { h: '時', hun: '때' }, { h: '詩', hun: '시' }],
+  신: [{ h: '信', hun: '믿을' }, { h: '新', hun: '새' }, { h: '申', hun: '펼' }],
+  아: [{ h: '雅', hun: '우아할' }, { h: '芽', hun: '싹' }],
+  안: [{ h: '安', hun: '편안할' }],
+  양: [{ h: '陽', hun: '볕' }, { h: '梁', hun: '들보' }],
+  연: [{ h: '然', hun: '그럴' }, { h: '娟', hun: '예쁠' }, { h: '燕', hun: '제비' }, { h: '延', hun: '늘일' }],
+  영: [{ h: '永', hun: '길' }, { h: '英', hun: '꽃부리' }, { h: '榮', hun: '영화' }, { h: '映', hun: '비출' }, { h: '瑛', hun: '옥빛' }],
+  예: [{ h: '禮', hun: '예도' }, { h: '藝', hun: '재주' }],
+  옥: [{ h: '玉', hun: '구슬' }],
+  온: [{ h: '溫', hun: '따뜻할' }],
+  용: [{ h: '勇', hun: '용감할' }, { h: '容', hun: '얼굴' }, { h: '龍', hun: '용' }],
+  우: [{ h: '宇', hun: '집' }, { h: '友', hun: '벗' }, { h: '雨', hun: '비' }, { h: '佑', hun: '도울' }],
+  욱: [{ h: '旭', hun: '해돋을' }, { h: '煜', hun: '빛날' }],
+  원: [{ h: '源', hun: '근원' }, { h: '遠', hun: '멀' }, { h: '元', hun: '으뜸' }],
+  유: [{ h: '有', hun: '있을' }, { h: '裕', hun: '넉넉할' }, { h: '儒', hun: '선비' }, { h: '柔', hun: '부드러울' }],
+  윤: [{ h: '允', hun: '허락할' }, { h: '潤', hun: '윤택할' }, { h: '尹', hun: '다스릴' }],
+  은: [{ h: '恩', hun: '은혜' }, { h: '銀', hun: '은' }, { h: '隱', hun: '숨을' }],
+  의: [{ h: '義', hun: '옳을' }, { h: '意', hun: '뜻' }, { h: '毅', hun: '굳셀' }],
+  인: [{ h: '仁', hun: '어질' }, { h: '引', hun: '끌' }, { h: '忍', hun: '참을' }],
+  일: [{ h: '一', hun: '한' }, { h: '日', hun: '날' }, { h: '逸', hun: '편안할' }],
+  임: [{ h: '林', hun: '수풀' }, { h: '任', hun: '맡길' }],
+  재: [{ h: '材', hun: '재목' }, { h: '才', hun: '재주' }, { h: '在', hun: '있을' }, { h: '宰', hun: '재상' }],
+  정: [{ h: '正', hun: '바를' }, { h: '貞', hun: '곧을' }, { h: '情', hun: '뜻' }, { h: '禎', hun: '상서' }, { h: '靜', hun: '고요할' }],
+  조: [{ h: '照', hun: '비출' }, { h: '朝', hun: '아침' }, { h: '造', hun: '만들' }],
+  종: [{ h: '宗', hun: '마루' }, { h: '鍾', hun: '쇠북' }],
+  주: [{ h: '主', hun: '주인' }, { h: '周', hun: '두루' }, { h: '珠', hun: '구슬' }, { h: '柱', hun: '기둥' }],
+  준: [{ h: '俊', hun: '준걸' }, { h: '準', hun: '법' }, { h: '竣', hun: '마칠' }, { h: '駿', hun: '준마' }, { h: '峻', hun: '높을' }],
+  지: [{ h: '智', hun: '슬기' }, { h: '志', hun: '뜻' }, { h: '知', hun: '알' }, { h: '芝', hun: '지초' }],
+  진: [{ h: '眞', hun: '참' }, { h: '珍', hun: '보배' }, { h: '振', hun: '떨칠' }, { h: '進', hun: '나아갈' }],
+  찬: [{ h: '讚', hun: '기릴' }, { h: '燦', hun: '빛날' }],
+  채: [{ h: '彩', hun: '빛' }, { h: '採', hun: '캘' }],
+  철: [{ h: '哲', hun: '밝을' }, { h: '鐵', hun: '쇠' }],
+  청: [{ h: '淸', hun: '맑을' }, { h: '靑', hun: '푸를' }],
+  춘: [{ h: '春', hun: '봄' }],
+  충: [{ h: '忠', hun: '충성' }],
+  태: [{ h: '泰', hun: '클' }, { h: '太', hun: '클' }],
+  택: [{ h: '澤', hun: '못' }],
+  하: [{ h: '夏', hun: '여름' }, { h: '河', hun: '강' }, { h: '賀', hun: '축하할' }, { h: '霞', hun: '노을' }],
+  학: [{ h: '學', hun: '배울' }, { h: '鶴', hun: '학' }],
+  한: [{ h: '漢', hun: '한수' }, { h: '韓', hun: '나라이름' }],
+  해: [{ h: '海', hun: '바다' }, { h: '解', hun: '풀' }],
+  현: [{ h: '賢', hun: '어질' }, { h: '玄', hun: '검을' }, { h: '炫', hun: '빛날' }, { h: '鉉', hun: '솥귀' }],
+  혜: [{ h: '慧', hun: '슬기' }, { h: '惠', hun: '은혜' }],
+  호: [{ h: '好', hun: '좋을' }, { h: '虎', hun: '범' }, { h: '浩', hun: '클' }, { h: '昊', hun: '하늘' }],
+  홍: [{ h: '洪', hun: '큰물' }, { h: '鴻', hun: '기러기' }, { h: '弘', hun: '넓을' }],
+  화: [{ h: '和', hun: '화할' }, { h: '花', hun: '꽃' }, { h: '華', hun: '빛날' }],
+  환: [{ h: '桓', hun: '굳셀' }, { h: '歡', hun: '기쁠' }],
+  효: [{ h: '孝', hun: '효도' }, { h: '曉', hun: '새벽' }],
+  훈: [{ h: '勳', hun: '공' }, { h: '薰', hun: '향기' }],
+  휘: [{ h: '輝', hun: '빛날' }],
+  희: [{ h: '希', hun: '바랄' }, { h: '喜', hun: '기쁠' }, { h: '熙', hun: '빛날' }],
+};
+
+// ── 이름 글자별 분해 ─────────────────────────────────────────
+const CHO_CHARS  = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+const JONG_CHARS = ['','ㄱ','ㄲ','ㄳ','ㄴ','ㄵ','ㄶ','ㄷ','ㄹ','ㄺ','ㄻ','ㄼ','ㄽ','ㄾ','ㄿ','ㅀ','ㅁ','ㅂ','ㅄ','ㅅ','ㅆ','ㅇ','ㅈ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+
+type SyllableInfo = { char: string; cho: string; choOh: Ohaeng; jong: string | null; jongOh: Ohaeng | null };
+
+function decomposeName(name: string): SyllableInfo[] {
+  return [...name].flatMap(ch => {
+    const code = ch.charCodeAt(0);
+    if (code < 0xAC00 || code > 0xD7A3) return [];
+    const offset = code - 0xAC00;
+    const choIdx  = Math.floor(offset / 28 / 21);
+    const jongIdx = offset % 28;
+    const choOh  = CHO_OH[choIdx]!;
+    const jongOh = jongIdx > 0 ? JONG_OH[jongIdx] : null;
+    return [{ char: ch, cho: CHO_CHARS[choIdx], choOh, jong: jongIdx > 0 ? JONG_CHARS[jongIdx] : null, jongOh }];
+  });
+}
+
+// 오행별 운세 영향
+const OH_FORTUNE: Record<Ohaeng, { areas: string[]; desc: string }> = {
+  wood:  { areas: ['성장운','건강운','추진력'], desc: '새로운 시작과 성장을 촉진하는 기운이에요. 끊임없이 뻗어나가는 에너지가 이름에 담겨 있어요.' },
+  fire:  { areas: ['명예운','인기운','표현력'], desc: '밝고 열정적인 기운으로 대인관계와 사회적 인지도에 긍정적 영향을 줘요.' },
+  earth: { areas: ['사업운','신뢰운','안정감'], desc: '묵직한 신뢰와 안정감을 주는 기운이에요. 사람들이 의지하게 되는 이름이에요.' },
+  metal: { areas: ['재물운','결단력','집중력'], desc: '날카로운 판단력과 집중력을 높이는 기운이에요. 목표 달성에 도움을 줘요.' },
+  water: { areas: ['지혜운','창의운','유연성'], desc: '깊은 지혜와 창의적 사고를 자극하는 기운이에요. 흐르는 물처럼 적응력이 높아요.' },
+};
+
+// ── 발음오행 분석 (작명소 원리) ────────────────────────────
+// 초성 인덱스 → 오행 (0=ㄱ,1=ㄲ,2=ㄴ,3=ㄷ,4=ㄸ,5=ㄹ,6=ㅁ,7=ㅂ,8=ㅃ,9=ㅅ,10=ㅆ,11=ㅇ,12=ㅈ,13=ㅉ,14=ㅊ,15=ㅋ,16=ㅌ,17=ㅍ,18=ㅎ)
+const CHO_OH: (Ohaeng | null)[] = [
+  'wood','wood','fire','fire','fire','fire','water','water','water','metal','metal','earth','metal','metal','metal','wood','fire','water','earth',
+];
+// 종성 인덱스 → 오행 (0=없음, 나머지는 대표 자음으로 귀속)
+const JONG_OH: (Ohaeng | null)[] = [
+  null,                     // 0: 없음
+  'wood','wood','wood',     // 1=ㄱ 2=ㄲ 3=ㄳ(ㄱ계)
+  'fire','fire','fire',     // 4=ㄴ 5=ㄵ(ㄴ계) 6=ㄶ(ㄴ계)
+  'fire',                   // 7=ㄷ
+  'fire','wood','water','water','metal','fire','fire','fire', // 8=ㄹ 9=ㄺ(ㄱ계) 10=ㄻ(ㅁ계) 11=ㄼ(ㅂ계) 12=ㄽ(ㅅ계) 13=ㄾ(ㄹ계) 14=ㄿ(ㅍ계) 15=ㅀ(ㄹ계)
+  'water',                  // 16=ㅁ
+  'water','water',          // 17=ㅂ 18=ㅄ(ㅂ계)
+  'metal','metal',          // 19=ㅅ 20=ㅆ
+  'earth',                  // 21=ㅇ
+  'metal','metal',          // 22=ㅈ 23=ㅊ
+  'wood',                   // 24=ㅋ
+  'fire',                   // 25=ㅌ
+  'water',                  // 26=ㅍ
+  'earth',                  // 27=ㅎ
+];
+
+function getNameOhaeng(name: string): Record<Ohaeng, number> {
+  const scores: Record<Ohaeng, number> = { wood: 0, fire: 0, earth: 0, metal: 0, water: 0 };
+  for (const ch of name) {
+    const code = ch.charCodeAt(0);
+    if (code < 0xAC00 || code > 0xD7A3) continue;
+    const offset = code - 0xAC00;
+    const choIdx = Math.floor(offset / 28 / 21);
+    const jongIdx = offset % 28;
+    const choOh = CHO_OH[choIdx];
+    const jongOh = JONG_OH[jongIdx];
+    if (choOh) scores[choOh]++;
+    if (jongOh) scores[jongOh]++;
+  }
+  return scores;
+}
+
+// 상생·상극 관계
+const SANGSAENG: Record<Ohaeng, Ohaeng> = { wood: 'fire', fire: 'earth', earth: 'metal', metal: 'water', water: 'wood' };
+const SANGGEUK: Record<Ohaeng, Ohaeng> = { wood: 'earth', fire: 'metal', earth: 'water', metal: 'wood', water: 'fire' };
+const OH_KR_SHORT: Record<Ohaeng, string> = { wood: '목(木)', fire: '화(火)', earth: '토(土)', metal: '금(金)', water: '수(水)' };
+
+type NameAnalysis = {
+  nameOh: Record<Ohaeng, number>;
+  dominant: Ohaeng | null;
+  grade: '최적' | '좋음' | '보통' | '주의';
+  gradeColor: string;
+  summary: string;
+  detail: string;
+};
+
+function analyzeNameForSaju(name: string, sajuOh: Record<Ohaeng, number>): NameAnalysis {
+  const nameOh = getNameOhaeng(name);
+  const total = Object.values(nameOh).reduce((a, b) => a + b, 0);
+
+  if (total === 0) {
+    return { nameOh, dominant: null, grade: '보통', gradeColor: '#aaa', summary: '한자 이름이 아니라 분석이 어려워요', detail: '' };
+  }
+
+  // 이름에서 가장 강한 오행
+  const nameRanked = (Object.entries(nameOh) as [Ohaeng, number][]).sort((a, b) => b[1] - a[1]);
+  const dominant = nameRanked[0][1] > 0 ? nameRanked[0][0] : null;
+
+  // 사주에서 가장 약한 오행 (보완 대상)
+  const sajuRanked = (Object.entries(sajuOh) as [Ohaeng, number][]).sort((a, b) => a[1] - b[1]);
+  const weakest = sajuRanked[0][0];
+  const strongest = (Object.entries(sajuOh) as [Ohaeng, number][]).sort((a, b) => b[1] - a[1])[0][0];
+
+  if (!dominant) return { nameOh, dominant: null, grade: '보통', gradeColor: '#F5A83C', summary: '분석 불가', detail: '' };
+
+  const completesWeak = dominant === weakest;
+  const sangsaengWithStrong = SANGSAENG[strongest] === dominant || SANGSAENG[dominant] === strongest;
+  const sanggeukWithStrong = SANGGEUK[dominant] === strongest || SANGGEUK[strongest] === dominant;
+
+  let grade: NameAnalysis['grade'];
+  let gradeColor: string;
+  let summary: string;
+  let detail: string;
+
+  if (completesWeak && sangsaengWithStrong) {
+    grade = '최적'; gradeColor = '#5CB85C';
+    summary = `이름이 사주의 약한 ${OH_KR_SHORT[weakest]}을(를) 보완하고 강한 ${OH_KR_SHORT[strongest]}과 상생해요`;
+    detail = `이름의 주요 기운 ${OH_KR_SHORT[dominant]}이(가) 사주에서 부족한 ${OH_KR_SHORT[weakest]}을(를) 채워주고, 사주 주도 기운 ${OH_KR_SHORT[strongest]}과 서로 기운을 키워줘요. 작명소에서 가장 좋게 보는 배합이에요.`;
+  } else if (completesWeak) {
+    grade = '좋음'; gradeColor = '#9B7FE0';
+    summary = `이름이 사주의 약한 ${OH_KR_SHORT[weakest]}을(를) 잘 보완해줘요`;
+    detail = `이름의 주요 기운 ${OH_KR_SHORT[dominant]}이(가) 사주에서 가장 부족한 ${OH_KR_SHORT[weakest]}을(를) 채워주는 역할을 해요. 작명에서 사주의 약점을 보완하는 것은 매우 중요하게 여겨요.`;
+  } else if (sangsaengWithStrong && !sanggeukWithStrong) {
+    grade = '좋음'; gradeColor = '#9B7FE0';
+    summary = `이름이 사주 주도 기운 ${OH_KR_SHORT[strongest]}과 상생 관계예요`;
+    detail = `이름의 ${OH_KR_SHORT[dominant]}과 사주의 강한 기운 ${OH_KR_SHORT[strongest]}이 서로 상생(相生)해요. 기운이 부드럽게 흘러 긍정적인 영향을 줘요.`;
+  } else if (sanggeukWithStrong) {
+    grade = '주의'; gradeColor = '#FF6B2F';
+    summary = `이름과 사주 주도 기운 ${OH_KR_SHORT[strongest]}이 상극(相剋) 관계예요`;
+    detail = `이름의 ${OH_KR_SHORT[dominant]}과 사주의 강한 기운 ${OH_KR_SHORT[strongest]}이 서로 억제하는 상극 관계예요. 작명소에서는 이 경우 이름을 바꾸거나 자를 조정하도록 권해요. 하지만 이름이 전부는 아니에요!`;
+  } else {
+    grade = '보통'; gradeColor = '#F5A83C';
+    summary = `이름과 사주가 무난한 관계예요`;
+    detail = `이름의 ${OH_KR_SHORT[dominant]} 기운이 사주와 특별히 상생하거나 상극하지 않아요. 무난한 배합으로 큰 문제는 없어요.`;
+  }
+
+  return { nameOh, dominant, grade, gradeColor, summary, detail };
+}
+
 function buildPouringSequence(base: Ingredient[]): { ing: Ingredient; isAccident: boolean; isEmpty: boolean }[] {
   const seq: { ing: Ingredient; isAccident: boolean; isEmpty: boolean }[] = [];
   const used = new Set<string>();
@@ -705,6 +944,23 @@ const GOD_EMPTY_LINES = [
 
 const ACCIDENT_SHOUT = ['앗!!', '어?!', '이게왜?!', '으아아!!'];
 
+// 한국어 조사 자동 선택 (받침 유무 판별)
+function josa을를(name: string) {
+  const code = name.charCodeAt(name.length - 1);
+  if (code < 0xAC00 || code > 0xD7A3) return '를';
+  return (code - 0xAC00) % 28 === 0 ? '를' : '을';
+}
+function josa이가(name: string) {
+  const code = name.charCodeAt(name.length - 1);
+  if (code < 0xAC00 || code > 0xD7A3) return '가';
+  return (code - 0xAC00) % 28 === 0 ? '가' : '이';
+}
+function josa은는(name: string) {
+  const code = name.charCodeAt(name.length - 1);
+  if (code < 0xAC00 || code > 0xD7A3) return '는';
+  return (code - 0xAC00) % 28 === 0 ? '는' : '은';
+}
+
 type Phase = 'intro' | 'naming' | 'pouring' | 'explosion' | 'result';
 
 export default function GodGame() {
@@ -714,6 +970,10 @@ export default function GodGame() {
   const [namingStep, setNamingStep] = useState(0);
   const [nameInput, setNameInput] = useState('');
   const [userName, setUserName] = useState('');
+  // 한자 확인
+  const [hanjaSelections, setHanjaSelections] = useState<number[]>([]); // 글자별 선택 인덱스
+  const [hanjaEditMode, setHanjaEditMode] = useState(false);            // 편집 모드
+  const [hanjaConfirmed, setHanjaConfirmed] = useState(false);          // 확정 여부
   const [yearInput, setYearInput] = useState('');
   const [monthInput, setMonthInput] = useState('');
   const [dayInput, setDayInput] = useState('');
@@ -722,8 +982,12 @@ export default function GodGame() {
 
   const [selected, setSelected] = useState<Ingredient[]>([]);
   const selectedRef = useRef<Ingredient[]>([]);
+  const [selectedWeights, setSelectedWeights] = useState<number[]>([]);
+  const selectedWeightsRef = useRef<number[]>([]);
   const [accidentals, setAccidentals] = useState<Set<string>>(new Set());
   const [emptyBottles, setEmptyBottles] = useState<Set<string>>(new Set());
+
+  const [pourIsDrop, setPourIsDrop] = useState(false);
 
   const [godSvgType, setGodSvgType] = useState<'idle' | 'panic' | 'dazed'>('idle');
   const [godClass, setGodClass] = useState('');
@@ -738,6 +1002,7 @@ export default function GodGame() {
   const [ohScores, setOhScores] = useState<Record<Ohaeng, number> | null>(null);
   const [tooltipIngId, setTooltipIngId] = useState<string | null>(null);
   const [showCompat, setShowCompat] = useState(false);
+  const [showNameDetail, setShowNameDetail] = useState(false);
   const [compatYear, setCompatYear] = useState('');
   const [compatMonth, setCompatMonth] = useState('');
   const [compatDay, setCompatDay] = useState('');
@@ -809,6 +1074,11 @@ export default function GodGame() {
     const name = nameInput.trim();
     if (!name) return;
     setUserName(name);
+    // 글자별 한자 초기 선택값 세팅
+    const sels = [...name].map(() => 0);
+    setHanjaSelections(sels);
+    setHanjaEditMode(false);
+    setHanjaConfirmed(false);
     setNamingStep(2);
   }, [nameInput]);
 
@@ -899,8 +1169,9 @@ export default function GodGame() {
           timers.current.push(cf);
           const lineIdx = Math.floor(Math.random() * GOD_EMPTY_LINES.length);
           showGodSpeech(GOD_EMPTY_LINES[lineIdx](`${item.ing.emoji}${item.ing.name}`), 4000);
+          setPourIsDrop(true);
           setGodClass('god-shake');
-          const gt = setTimeout(() => setGodClass(''), 1600);
+          const gt = setTimeout(() => { setGodClass(''); setPourIsDrop(false); }, 3200);
           timers.current.push(gt);
           setAccidentals(prev => new Set([...prev, item.ing.id]));
           setEmptyBottles(prev => new Set([...prev, item.ing.id]));
@@ -911,15 +1182,18 @@ export default function GodGame() {
           timers.current.push(cf);
           const accIdx = Math.floor(Math.random() * GOD_ACCIDENT_LINES.length);
           showGodSpeech(GOD_ACCIDENT_LINES[accIdx](`${item.ing.emoji}${item.ing.name}`), 4000);
+          setPourIsDrop(false);
           setAccidentals(prev => new Set([...prev, item.ing.id]));
         } else if (item.isEmpty) {
           const lineIdx = Math.floor(Math.random() * GOD_EMPTY_LINES.length);
           showGodSpeech(GOD_EMPTY_LINES[lineIdx](`${item.ing.emoji}${item.ing.name}`), 4000);
-          setGodClass('god-shake');
-          const gt = setTimeout(() => setGodClass(''), 1600);
+          setPourIsDrop(true);
+          setGodClass('god-tilt');
+          const gt = setTimeout(() => { setGodClass(''); setPourIsDrop(false); }, 3200);
           timers.current.push(gt);
           setEmptyBottles(prev => new Set([...prev, item.ing.id]));
         } else {
+          setPourIsDrop(false);
           const lineIdx = Math.floor(Math.random() * GOD_SELECT_LINES.length);
           showGodSpeech(GOD_SELECT_LINES[lineIdx](userName || '너', `${item.ing.emoji}${item.ing.name}`, spoons));
         }
@@ -931,6 +1205,9 @@ export default function GodGame() {
         const newSel = [...selectedRef.current, item.ing];
         selectedRef.current = newSel;
         setSelected(newSel);
+        const newW = [...selectedWeightsRef.current, spoons];
+        selectedWeightsRef.current = newW;
+        setSelectedWeights(newW);
 
         if (idx === sequence.length - 1) {
           const et = setTimeout(() => {
@@ -949,12 +1226,13 @@ export default function GodGame() {
   const handleReset = useCallback(() => {
     clearAllTimers();
     selectedRef.current = [];
-    setSelected([]); setUserName(''); setNameInput(''); setNamingStep(0);
+    selectedWeightsRef.current = [];
+    setSelected([]); setSelectedWeights([]); setUserName(''); setNameInput(''); setNamingStep(0);
     setYearInput(''); setMonthInput(''); setDayInput('');
     setZodiacInfo(null); setSaJuIngs([]);
     setGodSvgType('idle'); setGodClass(''); setBeakerClass(''); setFlashClass('');
     setParticles([]); setShowResult(false); setShowStats(false); setBouncingId(null);
-    setAccidentals(new Set()); setEmptyBottles(new Set());
+    setAccidentals(new Set()); setEmptyBottles(new Set()); setPourIsDrop(false);
     hasRecordedRef.current = false;
     setDominantOh(null); setHourOh(null); setOhScores(null);
     setTooltipIngId(null); setShowCompat(false);
@@ -970,7 +1248,7 @@ export default function GodGame() {
     const zi = ((parseInt(yearInput) % 12) + 12) % 12;
     const pt = dominantOh ? getPersonalityType(zi, dominantOh) : PERSONALITY_TYPES[0];
     try {
-      const blob = await generateShareImage(userName || '나', pt, selected, accidentals, emptyBottles);
+      const blob = await generateShareImage(userName || '나', pt, selected, accidentals, emptyBottles, selectedWeights);
       const file = new File([blob], '신이나를만들때.png', { type: 'image/png' });
       if (
         typeof navigator !== 'undefined' &&
@@ -978,7 +1256,7 @@ export default function GodGame() {
         typeof navigator.canShare === 'function' &&
         navigator.canShare({ files: [file] })
       ) {
-        await navigator.share({ files: [file], title: `신이 ${userName || '나'}을(를) 만들 때 🧪` });
+        await navigator.share({ files: [file], title: `신이 ${userName || '나'}${josa을를(userName || '나')} 만들 때 🧪` });
       } else {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -1015,7 +1293,7 @@ export default function GodGame() {
   const fillPct = (selected.length / MAX) * 100;
   const _zodiacIdx = yearInput ? ((parseInt(yearInput) % 12) + 12) % 12 : 0;
   const personality = showResult && dominantOh ? getPersonalityType(_zodiacIdx, dominantOh) : null;
-  const breakdown = personality ? getCategoryBreakdown(selected) : [];
+  const breakdown = personality ? getCategoryBreakdown(selected, selectedWeights) : [];
   const liquidColor = fillPct <= 20 ? '#7BB8F5' : fillPct <= 40 ? '#5CB85C'
     : fillPct <= 60 ? '#9B7FE0' : fillPct <= 80 ? '#F5A83C' : '#FF4040';
   const displayName = userName || '나';
@@ -1087,26 +1365,117 @@ export default function GodGame() {
             </div>
           )}
 
-          {/* step 2: 이름 반응 (클릭 진행) */}
-          {namingStep === 2 && (
-            <div style={css.rpgBox}>
-              <div style={css.rpgSpeaker}>신 🌩️</div>
-              <p style={css.rpgLine}><b>{userName}</b>...</p>
-              <p style={css.rpgLine}>그렇군...</p>
-              <p style={css.rpgLine}>흠... 좋은 이름이군. ☁️</p>
-              <p style={css.rpgLine}>그렇다면 생년월일도 알려주겠느냐?</p>
-              <div style={css.rpgAdvanceRow}>
-                <button style={css.rpgAdvanceBtn} onClick={handleStep2Next}>▶</button>
+          {/* step 2: 한자 확인 → 이름 반응 */}
+          {namingStep === 2 && (() => {
+            const chars = [...userName];
+            const hanjaChars = chars.filter(ch => {
+              const c = ch.charCodeAt(0);
+              return c >= 0xAC00 && c <= 0xD7A3 && HANJA_DB[ch];
+            });
+            const hasHanja = hanjaChars.length > 0 && !hanjaConfirmed;
+
+            if (hasHanja) {
+              return (
+                <div style={css.rpgBox}>
+                  <div style={css.rpgSpeaker}>신 🌩️</div>
+                  {!hanjaEditMode ? (
+                    <>
+                      <p style={css.rpgLine}><b>{userName}</b>...</p>
+                      <p style={css.rpgLine}>이 이름의 한자는 이게 맞느냐?</p>
+                      {/* 기본 추천 한자 카드 */}
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const, margin: '12px 0 4px' }}>
+                        {chars.map((ch, i) => {
+                          const opts = HANJA_DB[ch];
+                          const sel = hanjaSelections[i] ?? 0;
+                          const opt = opts?.[sel];
+                          return (
+                            <div key={i} style={{
+                              background: 'rgba(155,127,224,0.12)',
+                              border: '1.5px solid rgba(155,127,224,0.4)',
+                              borderRadius: 10, padding: '10px 14px',
+                              textAlign: 'center' as const, minWidth: 64,
+                            }}>
+                              <div style={{ fontSize: 22, fontWeight: 900, color: '#fff' }}>{opt ? opt.h : ch}</div>
+                              <div style={{ fontSize: 12, color: 'rgba(155,127,224,0.9)', fontWeight: 700, marginTop: 3 }}>{ch}</div>
+                              {opt && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', marginTop: 1 }}>{opt.hun} {ch}</div>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                        <button style={{ ...css.rpgBtn, flex: 1 }} onClick={() => setHanjaConfirmed(true)}>맞아요 ✓</button>
+                        <button style={{ ...css.rpgBtn, flex: 1, background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }}
+                          onClick={() => setHanjaEditMode(true)}>바꿀게요 ✍️</button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p style={css.rpgLine}>글자마다 한자를 골라보렴 👇</p>
+                      {chars.map((ch, i) => {
+                        const opts = HANJA_DB[ch];
+                        if (!opts) return (
+                          <div key={i} style={{ display: 'inline-block', background: 'rgba(255,255,255,0.06)', borderRadius: 8, padding: '6px 12px', margin: '4px 4px', fontSize: 16, color: '#fff' }}>{ch}</div>
+                        );
+                        const sel = hanjaSelections[i] ?? 0;
+                        return (
+                          <div key={i} style={{ marginBottom: 12 }}>
+                            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>
+                              <b style={{ color: '#fff' }}>{ch}</b> 의 한자
+                            </div>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
+                              {opts.map((opt, j) => (
+                                <button key={j}
+                                  onClick={() => {
+                                    const next = [...hanjaSelections];
+                                    next[i] = j;
+                                    setHanjaSelections(next);
+                                  }}
+                                  style={{
+                                    background: sel === j ? 'rgba(155,127,224,0.3)' : 'rgba(255,255,255,0.06)',
+                                    border: `1.5px solid ${sel === j ? 'rgba(155,127,224,0.8)' : 'rgba(255,255,255,0.15)'}`,
+                                    borderRadius: 10, padding: '8px 12px',
+                                    cursor: 'pointer', textAlign: 'center' as const,
+                                    color: '#fff',
+                                  }}>
+                                  <div style={{ fontSize: 20, fontWeight: 900 }}>{opt.h}</div>
+                                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>{opt.hun} {ch}</div>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      <button style={{ ...css.rpgBtn, width: '100%', marginTop: 4 }}
+                        onClick={() => { setHanjaEditMode(false); setHanjaConfirmed(true); }}>
+                        확정 ✓
+                      </button>
+                    </>
+                  )}
+                </div>
+              );
+            }
+
+            // 한자 확인 완료 → 이름 반응
+            return (
+              <div style={css.rpgBox}>
+                <div style={css.rpgSpeaker}>신 🌩️</div>
+                <p style={css.rpgLine}><b>{userName}</b>...</p>
+                <p style={css.rpgLine}>그렇군...</p>
+                <p style={css.rpgLine}>흠... 좋은 이름이군. ☁️</p>
+                <p style={css.rpgLine}>그렇다면 생년월일도 알려주겠느냐?</p>
+                <div style={css.rpgAdvanceRow}>
+                  <button style={css.rpgAdvanceBtn} onClick={handleStep2Next}>▶</button>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* step 3: 생년월일 입력 */}
           {namingStep === 3 && (
             <div style={css.rpgBox}>
               <div style={css.rpgSpeaker}>신 🌩️</div>
               <p style={css.rpgLine}>그렇다면...</p>
-              <p style={css.rpgLine}><b>{userName}</b>는 언제 태어났느냐?</p>
+              <p style={css.rpgLine}><b>{userName}</b>{josa은는(userName)} 언제 태어났느냐?</p>
               <div style={css.dateRow}>
                 <input
                   style={css.dateInputYear}
@@ -1151,7 +1520,7 @@ export default function GodGame() {
             <div style={css.rpgBox}>
               <div style={css.rpgSpeaker}>신 🌩️</div>
               <p style={css.rpgLine}>마지막으로...</p>
-              <p style={css.rpgLine}><b>{userName}</b>는 언제쯤 태어났느냐?</p>
+              <p style={css.rpgLine}><b>{userName}</b>{josa은는(userName)} 언제쯤 태어났느냐?</p>
               <p style={{ ...css.rpgLine, fontSize: 13, color: 'rgba(255,255,255,0.45)' } as CSSProperties}>
                 시주(時柱)까지 보면 더 정확해지느니라
               </p>
@@ -1168,7 +1537,7 @@ export default function GodGame() {
                   >
                     <span style={{ fontSize: 22 }}>{slot.emoji}</span>
                     <span style={{ fontWeight: 800, fontSize: 13 }}>{slot.label}</span>
-                    <span style={{ fontSize: 11, opacity: 0.7 }}>{slot.range}</span>
+                    <span style={{ fontSize: 12, opacity: 0.7 }}>{slot.range}</span>
                   </button>
                 ))}
               </div>
@@ -1238,7 +1607,7 @@ export default function GodGame() {
           <div style={css.header}>
             <div style={css.headerBadge}>🧬 밈 게임</div>
             <h1 style={css.title} className="title-pop">
-              신이 <span style={{ color: '#D4BFFF' }}>{displayName}</span>을(를) 만들 때 🧪
+              신이 <span style={{ color: '#D4BFFF' }}>{displayName}</span>{josa을를(displayName)} 만들 때 🧪
             </h1>
           </div>
 
@@ -1253,7 +1622,7 @@ export default function GodGame() {
                 </div>
               )}
               <div className={godClass}>
-                {godSvgType === 'idle' && <GodIdle count={selected.length} />}
+                {godSvgType === 'idle' && <GodIdle count={selected.length} isDrop={pourIsDrop} />}
                 {godSvgType === 'panic' && <GodPanic />}
                 {godSvgType === 'dazed' && <GodDazed />}
               </div>
@@ -1310,14 +1679,17 @@ export default function GodGame() {
                       className={isBouncing ? 'card-bounce' : ''}
                       style={{
                         ...css.pourCard,
-                        ...(isAcc ? css.pourCardAcc : {}),
-                        ...(isEmpty ? css.pourCardEmpty2 : {}),
+                        ...(isAcc && !isEmpty ? css.pourCardAcc : {}),
+                        ...(isEmpty && !isAcc ? css.pourCardEmpty2 : {}),
+                        ...(isEmpty && isAcc ? { background: 'rgba(255,80,80,0.12)', border: '1.5px dashed #FF6060', opacity: 0.82 } : {}),
+                        ...(isEmpty ? { opacity: (isAcc ? 0.82 : 0.72) } : {}),
                       }}
                     >
-                      <span style={css.pourEmoji}>{ing.emoji}</span>
-                      <span style={css.pourName}>{ing.name}</span>
+                      <span style={{ ...css.pourEmoji, ...(isEmpty ? { fontSize: 20, filter: 'grayscale(40%)' } : {}) }}>{ing.emoji}</span>
+                      <span style={{ ...css.pourName, ...(isEmpty ? { color: '#7BB8F5' } : {}) }}>{ing.name}</span>
                       {isAcc && !isEmpty && <span style={css.accBadgePour}>💥 실수</span>}
-                      {isEmpty && <span style={css.emptyBadgePour}>💧 한방울</span>}
+                      {isEmpty && !isAcc && <span style={css.emptyBadgePour}>💧 한방울</span>}
+                      {isEmpty && isAcc && <span style={{ ...css.accBadgePour, fontSize: 8 }}>💥💧</span>}
                     </div>
                   );
                 })}
@@ -1421,6 +1793,203 @@ export default function GodGame() {
         </div>
       )}
 
+      {/* ── 이름 × 사주 상세 분석 오버레이 ── */}
+      {showNameDetail && ohScores && userName && (() => {
+        const na = analyzeNameForSaju(userName, ohScores);
+        const syllables = decomposeName(userName);
+        if (syllables.length === 0) return null;
+
+        const sajuRanked = (Object.entries(ohScores) as [Ohaeng,number][]).sort((a,b)=>a[1]-b[1]);
+        const weakest  = sajuRanked[0][0];
+        const weakest2 = sajuRanked[1][0];
+        const sajuStrongest = (Object.entries(ohScores) as [Ohaeng,number][]).sort((a,b)=>b[1]-a[1])[0][0];
+
+        const completesWeak   = na.dominant === weakest;
+        const completesWeak2  = na.dominant === weakest2;
+        const sangsaeng       = na.dominant ? (SANGSAENG[sajuStrongest] === na.dominant || SANGSAENG[na.dominant] === sajuStrongest) : false;
+        const diversity       = Object.values(na.nameOh).filter(v => v > 0).length >= 2;
+
+        const principles = [
+          { label: '사주 약점 보완', pass: completesWeak || completesWeak2, desc: completesWeak ? `이름의 ${OH_KR_SHORT[na.dominant!]} 기운이 사주에서 가장 부족한 ${OH_KR_SHORT[weakest]}을(를) 직접 채워요` : completesWeak2 ? `사주에서 두 번째로 부족한 ${OH_KR_SHORT[weakest2]}을(를) 보완해요` : `이름의 주도 기운이 사주의 약점과 잘 맞지 않아요` },
+          { label: '상생 흐름 형성', pass: sangsaeng, desc: sangsaeng ? `이름의 ${OH_KR_SHORT[na.dominant!]}과(와) 사주 주도 기운 ${OH_KR_SHORT[sajuStrongest]}이 상생(相生)해요` : `이름과 사주 주도 기운 사이에 상생 관계가 없어요` },
+          { label: '오행 다양성',    pass: diversity, desc: diversity ? `이름에 ${Object.values(na.nameOh).filter(v=>v>0).length}가지 오행이 담겨 있어요` : `이름의 오행이 한 가지에 집중되어 있어요` },
+        ];
+
+        const fortuneOh = na.dominant ?? sajuStrongest;
+        const fortune   = OH_FORTUNE[fortuneOh];
+
+        return (
+          <div className="result-slide" style={css.statsOverlay}>
+            <div style={css.resultBg} />
+            <div style={css.statsScroll}>
+              <div style={css.statsContent}>
+
+                {/* 헤더 */}
+                <div style={css.statsHeader}>
+                  <button style={css.statsBackBtn} onClick={() => setShowNameDetail(false)}>← 돌아가기</button>
+                  <h2 style={css.statsTitle}>🔤 이름 × 사주 분석</h2>
+                  <p style={css.statsSubtitle}>작명소 원리로 보는 이름과 사주의 관계</p>
+                  {/* 선택된 한자 요약 */}
+                  {hanjaSelections.length > 0 && [...userName].some(ch => HANJA_DB[ch]) && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const, marginTop: 10, justifyContent: 'center' }}>
+                      {[...userName].map((ch, i) => {
+                        const opts = HANJA_DB[ch];
+                        const opt = opts?.[hanjaSelections[i] ?? 0];
+                        return (
+                          <span key={i} style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>
+                            {opt ? `${opt.h}(${opt.hun} ${ch})` : ch}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* ① 글자별 발음오행 분해 */}
+                <div style={{ marginBottom: 24 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.4)', letterSpacing: 0.8, marginBottom: 10 }}>STEP 1 — 글자별 발음오행 분해</div>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' as CSSProperties['flexWrap'] }}>
+                    {syllables.map((s, i) => (
+                      <div key={i} style={{
+                        background: 'rgba(255,255,255,0.05)', border: '1.5px solid rgba(255,255,255,0.1)',
+                        borderRadius: 12, padding: '14px 16px', minWidth: 96, textAlign: 'center' as CSSProperties['textAlign'],
+                      }}>
+                        <div style={{ fontSize: 28, fontWeight: 900, color: '#fff', marginBottom: 8 }}>{s.char}</div>
+                        {/* 초성 */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center', marginBottom: 4 }}>
+                          <span style={{ fontSize: 15, fontWeight: 800, color: 'rgba(255,255,255,0.6)' }}>{s.cho}</span>
+                          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>→</span>
+                          <span style={{ fontSize: 12, fontWeight: 800, color: OHAENG_COLOR[s.choOh], background: `${OHAENG_COLOR[s.choOh]}22`, borderRadius: 6, padding: '2px 7px' }}>{OH_KR_SHORT[s.choOh]}</span>
+                        </div>
+                        {/* 종성 */}
+                        {s.jong && s.jongOh && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}>
+                            <span style={{ fontSize: 13, fontWeight: 800, color: 'rgba(255,255,255,0.45)' }}>{s.jong}</span>
+                            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>→</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: OHAENG_COLOR[s.jongOh], background: `${OHAENG_COLOR[s.jongOh]}18`, borderRadius: 6, padding: '2px 6px' }}>{OH_KR_SHORT[s.jongOh]}</span>
+                          </div>
+                        )}
+                        {!s.jong && (
+                          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 2 }}>받침 없음</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 10, lineHeight: 1.6 }}>
+                    초성(굵게) = 주요 오행 / 종성(연하게) = 보조 오행 · 자음이 없는 ㅇ은 중성으로 토(土) 배속
+                  </div>
+                </div>
+
+                {/* ② 사주 vs 이름 오행 비교 */}
+                <div style={{ marginBottom: 24 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.4)', letterSpacing: 0.8, marginBottom: 10 }}>STEP 2 — 사주 vs 이름 오행 비교</div>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <div style={{ width: 12, height: 6, borderRadius: 3, background: 'rgba(155,127,224,0.9)' }} />
+                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>사주</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <div style={{ width: 12, height: 6, borderRadius: 3, background: 'rgba(155,127,224,0.35)' }} />
+                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>이름</span>
+                    </div>
+                  </div>
+                  {(['wood','fire','earth','metal','water'] as Ohaeng[]).map(oh => {
+                    const sajuV = ohScores[oh];
+                    const nameV = na.nameOh[oh];
+                    const sajuMax = Math.max(...Object.values(ohScores)) || 1;
+                    const nameMax = Math.max(...Object.values(na.nameOh)) || 1;
+                    const isWeak  = oh === weakest;
+                    const isNamed = nameV > 0 && oh === na.dominant;
+                    return (
+                      <div key={oh} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                        <span style={{ width: 58, fontSize: 11, color: OHAENG_COLOR[oh], fontWeight: 700, flexShrink: 0 }}>{OH_KR_SHORT[oh]}</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ height: 7, background: 'rgba(255,255,255,0.08)', borderRadius: 4, overflow: 'hidden', marginBottom: 3 }}>
+                            <div style={{ height: '100%', width: `${(sajuV/sajuMax)*100}%`, background: OHAENG_COLOR[oh], borderRadius: 4 }} />
+                          </div>
+                          <div style={{ height: 7, background: 'rgba(255,255,255,0.05)', borderRadius: 4, overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${(nameV/nameMax)*100}%`, background: OHAENG_COLOR[oh], borderRadius: 4, opacity: 0.4 }} />
+                          </div>
+                        </div>
+                        <div style={{ width: 60, display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'flex-end', flexShrink: 0 }}>
+                          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)' }}>사주 ×{sajuV}{isWeak?' 🔻':''}</span>
+                          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>이름 ×{nameV}{isNamed?' ✦':''}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* ③ 작명 3원칙 체크 */}
+                <div style={{ marginBottom: 24 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.4)', letterSpacing: 0.8, marginBottom: 10 }}>STEP 3 — 작명 3원칙 체크</div>
+                  {principles.map((p, i) => (
+                    <div key={i} style={{
+                      background: p.pass ? 'rgba(91,184,91,0.08)' : 'rgba(255,120,80,0.08)',
+                      border: `1.5px solid ${p.pass ? 'rgba(91,184,91,0.3)' : 'rgba(255,120,80,0.25)'}`,
+                      borderRadius: 10, padding: '12px 14px', marginBottom: 8,
+                      display: 'flex', gap: 12, alignItems: 'flex-start',
+                    }}>
+                      <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>{p.pass ? '✅' : '⚠️'}</span>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: p.pass ? '#7BE07B' : '#FF9060', marginBottom: 3 }}>
+                          {p.label}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', lineHeight: 1.55 }}>{p.desc}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* ④ 이름이 강화하는 운세 */}
+                <div style={{ marginBottom: 24 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.4)', letterSpacing: 0.8, marginBottom: 10 }}>STEP 4 — 이름이 강화하는 운세</div>
+                  <div style={{
+                    background: `${OHAENG_COLOR[fortuneOh]}18`,
+                    border: `1.5px solid ${OHAENG_COLOR[fortuneOh]}44`,
+                    borderRadius: 12, padding: '16px',
+                  }}>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as CSSProperties['flexWrap'], marginBottom: 10 }}>
+                      {fortune.areas.map(a => (
+                        <span key={a} style={{
+                          background: `${OHAENG_COLOR[fortuneOh]}2A`,
+                          border: `1px solid ${OHAENG_COLOR[fortuneOh]}55`,
+                          borderRadius: 999, padding: '4px 12px',
+                          fontSize: 12, fontWeight: 700, color: OHAENG_COLOR[fortuneOh],
+                        }}>{a}</span>
+                      ))}
+                    </div>
+                    <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.75)', lineHeight: 1.65, margin: 0 }}>{fortune.desc}</p>
+                  </div>
+                </div>
+
+                {/* ⑤ 종합 판정 */}
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.4)', letterSpacing: 0.8, marginBottom: 10 }}>종합 판정</div>
+                  <div style={{
+                    background: `${na.gradeColor}18`, border: `2px solid ${na.gradeColor}55`,
+                    borderRadius: 14, padding: '18px 16px', textAlign: 'center' as CSSProperties['textAlign'],
+                  }}>
+                    <div style={{ fontSize: 32, fontWeight: 900, color: na.gradeColor, marginBottom: 6 }}>{na.grade}</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 10 }}>{na.summary}</div>
+                    <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', lineHeight: 1.7, margin: 0 }}>{na.detail}</p>
+                    <div style={{ marginTop: 14, fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>
+                      통과한 원칙: {principles.filter(p=>p.pass).length} / {principles.length}개
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', textAlign: 'center', lineHeight: 1.7, marginBottom: 8 }}>
+                  * 발음오행은 한국의 전통 작명 원리 중 하나예요.<br/>
+                  실제 작명소에서는 획수·음양·자원오행 등도 함께 검토해요.
+                </div>
+
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── 궁합 오버레이 ── */}
       {showCompat && dominantOh && (
         <div className="result-slide" style={css.statsOverlay}>
@@ -1522,7 +2091,7 @@ export default function GodGame() {
               </div>
 
               <div style={css.resultHeader}>
-                <div style={css.resultHeaderBadge}>🧪 실험 결과 — 신이 {displayName}을(를) 만들 때</div>
+                <div style={css.resultHeaderBadge}>🧪 실험 결과 — 신이 {displayName}{josa을를(displayName)} 만들 때</div>
               </div>
 
               <div style={css.typeCard}>
@@ -1533,37 +2102,107 @@ export default function GodGame() {
 
               <div style={css.section}>
                 <div style={css.sectionTitle}>📦 신이 넣은 재료</div>
-                <p style={{ ...css.sectionTitle, fontSize: 11, color: 'rgba(255,255,255,0.35)', fontWeight: 400, marginTop: -8, marginBottom: 6 } as CSSProperties}>
+                <p style={{ ...css.sectionTitle, fontSize: 12, color: 'rgba(255,255,255,0.35)', fontWeight: 400, marginTop: -8, marginBottom: 8 } as CSSProperties}>
                   재료를 누르면 명리학 배속 이유를 볼 수 있어
                 </p>
-                <div style={css.recapGrid}>
-                  {selected.map(ing => (
-                    <div key={ing.id}
-                      onClick={() => setTooltipIngId(tooltipIngId === ing.id ? null : ing.id)}
-                      style={{
-                        ...css.recapChip,
-                        ...(accidentals.has(ing.id) ? css.recapChipAcc : {}),
-                        ...(emptyBottles.has(ing.id) ? css.recapChipEmpty : {}),
-                        cursor: 'pointer', position: 'relative',
-                      }}>
-                      <span style={{ fontSize: 20 }}>{ing.emoji}</span>
-                      <span style={css.recapName}>{ing.name}</span>
-                      {accidentals.has(ing.id) && !emptyBottles.has(ing.id) && <span style={css.accLabel}>실수</span>}
-                      {emptyBottles.has(ing.id) && <span style={css.emptyLabel}>💧 한방울</span>}
-                      {tooltipIngId === ing.id && (
-                        <div style={css.ingTooltip}>
-                          <span style={{ color: OHAENG_COLOR[ING_OHAENG[ing.id]] }}>{OHAENG_KR[ING_OHAENG[ing.id]]}</span>
-                          <br/>{ING_TOOLTIP[ing.id]}
-                          {accidentals.has(ing.id) && dominantOh && (
-                            <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid rgba(155,127,224,0.3)', color: '#FFCC80', fontSize: 10, lineHeight: 1.5 }}>
-                              💥 왜 실수로 들어갔냐면: {getAccidentReason(ing.id, dominantOh)}
+
+                {/* ① 정상 재료 — 많이 들어간 것들 */}
+                {selected.some(ing => !accidentals.has(ing.id) && !emptyBottles.has(ing.id)) && (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                      <div style={{ width: 3, height: 14, background: '#9B7FE0', borderRadius: 2 }} />
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.5)', letterSpacing: 0.5 }}>가득 들어간 것들</span>
+                    </div>
+                    <div style={css.recapGrid}>
+                      {selected.filter(ing => !accidentals.has(ing.id) && !emptyBottles.has(ing.id)).map(ing => (
+                        <div key={ing.id}
+                          onClick={() => setTooltipIngId(tooltipIngId === ing.id ? null : ing.id)}
+                          style={{ ...css.recapChip, cursor: 'pointer', position: 'relative' }}>
+                          <span style={{ fontSize: 20 }}>{ing.emoji}</span>
+                          <span style={css.recapName}>{ing.name}</span>
+                          {tooltipIngId === ing.id && (
+                            <div style={css.ingTooltip}>
+                              <span style={{ color: OHAENG_COLOR[ING_OHAENG[ing.id]] }}>{OHAENG_KR[ING_OHAENG[ing.id]]}</span>
+                              <br/>{ING_TOOLTIP[ing.id]}
                             </div>
                           )}
                         </div>
-                      )}
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </>
+                )}
+
+                {/* ② 한방울만 들어간 것들 — 있을 때만 */}
+                {selected.some(ing => !accidentals.has(ing.id) && emptyBottles.has(ing.id)) && (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 16, marginBottom: 8 }}>
+                      <div style={{ width: 3, height: 14, background: '#5BB8FF', borderRadius: 2 }} />
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#5BB8FF', letterSpacing: 0.5 }}>한방울만 들어간 것들</span>
+                      <span style={{ fontSize: 11, color: 'rgba(91,184,255,0.6)' }}>— 병이 비어서 겨우 뚝...</span>
+                    </div>
+                    <div style={css.recapGrid}>
+                      {selected.filter(ing => !accidentals.has(ing.id) && emptyBottles.has(ing.id)).map(ing => (
+                        <div key={ing.id}
+                          onClick={() => setTooltipIngId(tooltipIngId === ing.id ? null : ing.id)}
+                          style={{
+                            background: 'rgba(91,184,255,0.06)',
+                            border: '1.5px dashed rgba(91,184,255,0.35)',
+                            borderRadius: 8, padding: '5px 10px',
+                            display: 'flex', alignItems: 'center', gap: 5,
+                            cursor: 'pointer', position: 'relative', opacity: 0.78,
+                          }}>
+                          <span style={{ fontSize: 14, filter: 'grayscale(55%) opacity(0.8)' }}>{ing.emoji}</span>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.6)' }}>{ing.name}</span>
+                          <span style={{ fontSize: 9, color: '#5BB8FF', marginLeft: 1 }}>💧</span>
+                          {tooltipIngId === ing.id && (
+                            <div style={css.ingTooltip}>
+                              <span style={{ color: OHAENG_COLOR[ING_OHAENG[ing.id]] }}>{OHAENG_KR[ING_OHAENG[ing.id]]}</span>
+                              <br/>{ING_TOOLTIP[ing.id]}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {/* ③ 실수로 들어간 것들 — 있을 때만 */}
+                {selected.some(ing => accidentals.has(ing.id)) && (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 16, marginBottom: 8 }}>
+                      <div style={{ width: 3, height: 14, background: '#FF8C42', borderRadius: 2 }} />
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#FFCC80', letterSpacing: 0.5 }}>실수로 들어간 것들</span>
+                      <span style={{ fontSize: 11, color: 'rgba(255,204,128,0.6)' }}>— 신이 미끄러졌어</span>
+                    </div>
+                    <div style={css.recapGrid}>
+                      {selected.filter(ing => accidentals.has(ing.id)).map(ing => (
+                        <div key={ing.id}
+                          onClick={() => setTooltipIngId(tooltipIngId === ing.id ? null : ing.id)}
+                          style={{
+                            ...css.recapChip,
+                            ...css.recapChipAcc,
+                            ...(emptyBottles.has(ing.id) ? { border: '1.5px dashed rgba(255,80,80,0.45)', opacity: 0.8 } : {}),
+                            cursor: 'pointer', position: 'relative',
+                          }}>
+                          <span style={{ fontSize: emptyBottles.has(ing.id) ? 15 : 20, filter: emptyBottles.has(ing.id) ? 'grayscale(40%)' : 'none' }}>{ing.emoji}</span>
+                          <span style={{ ...css.recapName, ...(emptyBottles.has(ing.id) ? { fontSize: 11, opacity: 0.75 } : {}) }}>{ing.name}</span>
+                          {emptyBottles.has(ing.id) && <span style={{ ...css.emptyLabel, fontSize: 9 }}>💧</span>}
+                          {tooltipIngId === ing.id && (
+                            <div style={css.ingTooltip}>
+                              <span style={{ color: OHAENG_COLOR[ING_OHAENG[ing.id]] }}>{OHAENG_KR[ING_OHAENG[ing.id]]}</span>
+                              <br/>{ING_TOOLTIP[ing.id]}
+                              {dominantOh && (
+                                <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid rgba(155,127,224,0.3)', color: '#FFCC80', fontSize: 10, lineHeight: 1.5 }}>
+                                  💥 왜 실수로 들어갔냐면: {getAccidentReason(ing.id, dominantOh)}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
 
               <div style={css.section}>
@@ -1589,12 +2228,116 @@ export default function GodGame() {
                     {(Object.entries(ohScores) as [Ohaeng, number][]).sort((a,b)=>b[1]-a[1]).map(([oh, v]) => (
                       <div key={oh} style={css.radarLegendItem}>
                         <span style={{ color: OHAENG_COLOR[oh], fontWeight: 700, fontSize: 12 }}>{OHAENG_KR[oh]}</span>
-                        <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginLeft: 4 }}>×{v}</span>
+                        <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, marginLeft: 4 }}>×{v}</span>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
+
+              {ohScores && userName && (() => {
+                const na = analyzeNameForSaju(userName, ohScores);
+                const nameTotal = Object.values(na.nameOh).reduce((a, b) => a + b, 0);
+                if (nameTotal === 0) return null;
+                const nameRanked = (Object.entries(na.nameOh) as [Ohaeng, number][]).filter(([,v]) => v > 0).sort((a,b)=>b[1]-a[1]);
+                return (
+                  <div style={css.section}>
+                    <div style={css.sectionTitle}>🔤 이름 발음오행 분석</div>
+                    {/* 선택된 한자 표시 */}
+                    {hanjaSelections.length > 0 && (() => {
+                      const chars = [...userName];
+                      const hasAny = chars.some(ch => HANJA_DB[ch]);
+                      if (!hasAny) return null;
+                      return (
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const, marginBottom: 10, alignItems: 'center' }}>
+                          {chars.map((ch, i) => {
+                            const opts = HANJA_DB[ch];
+                            const opt = opts?.[hanjaSelections[i] ?? 0];
+                            return (
+                              <div key={i} style={{
+                                background: 'rgba(255,255,255,0.06)',
+                                border: '1px solid rgba(255,255,255,0.15)',
+                                borderRadius: 8, padding: '5px 10px',
+                                textAlign: 'center' as const,
+                              }}>
+                                <div style={{ fontSize: 15, fontWeight: 900, color: '#fff' }}>{opt ? opt.h : ch}</div>
+                                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>{opt ? `${opt.hun} ${ch}` : ch}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                    {/* 이름 오행 칩 */}
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                      {nameRanked.map(([oh, v]) => (
+                        <div key={oh} style={{
+                          background: `${OHAENG_COLOR[oh as Ohaeng]}22`,
+                          border: `1.5px solid ${OHAENG_COLOR[oh as Ohaeng]}`,
+                          borderRadius: 8, padding: '6px 12px',
+                          display: 'flex', alignItems: 'center', gap: 6,
+                        }}>
+                          <span style={{ color: OHAENG_COLOR[oh as Ohaeng], fontWeight: 800, fontSize: 13 }}>{OH_KR_SHORT[oh as Ohaeng]}</span>
+                          <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>×{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {/* 등급 배지 + 요약 */}
+                    <div style={{
+                      background: `${na.gradeColor}18`, border: `1.5px solid ${na.gradeColor}55`,
+                      borderRadius: 12, padding: '14px 16px', marginBottom: 10,
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                        <span style={{
+                          background: na.gradeColor, color: '#fff',
+                          fontWeight: 900, fontSize: 13, borderRadius: 999, padding: '3px 10px',
+                        }}>{na.grade}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#fff', lineHeight: 1.4 }}>{na.summary}</span>
+                      </div>
+                      <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.72)', lineHeight: 1.6, margin: 0 }}>{na.detail}</p>
+                    </div>
+                    {/* 사주 vs 이름 비교 바 */}
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 6, letterSpacing: 0.5 }}>사주 vs 이름 오행 비교</div>
+                    {(['wood','fire','earth','metal','water'] as Ohaeng[]).map(oh => {
+                      const sajuV = ohScores[oh];
+                      const nameV = na.nameOh[oh];
+                      const sajuMax = Math.max(...Object.values(ohScores)) || 1;
+                      const nameMax = Math.max(...Object.values(na.nameOh)) || 1;
+                      return (
+                        <div key={oh} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                          <span style={{ width: 56, fontSize: 11, color: OHAENG_COLOR[oh], fontWeight: 700, flexShrink: 0 }}>{OH_KR_SHORT[oh]}</span>
+                          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            <div style={{ height: 5, background: 'rgba(255,255,255,0.08)', borderRadius: 3, overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${(sajuV / sajuMax) * 100}%`, background: OHAENG_COLOR[oh], borderRadius: 3, opacity: 0.9 }} />
+                            </div>
+                            <div style={{ height: 5, background: 'rgba(255,255,255,0.08)', borderRadius: 3, overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${(nameV / nameMax) * 100}%`, background: OHAENG_COLOR[oh], borderRadius: 3, opacity: 0.4 }} />
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-end', width: 52 }}>
+                            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)' }}>사주 ×{sajuV}</span>
+                            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>이름 ×{nameV}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 8, lineHeight: 1.5 }}>
+                      * 발음오행은 이름 각 글자의 초성·종성 자음을 오행에 배속해 분석해요. 한글 이름만 분석 가능해요.
+                    </div>
+                    <button
+                      style={{
+                        width: '100%', marginTop: 14,
+                        background: 'rgba(155,127,224,0.12)', border: '1.5px solid rgba(155,127,224,0.4)',
+                        borderRadius: 10, padding: '11px 0', color: '#C4ADFF',
+                        fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                      }}
+                      onClick={() => setShowNameDetail(true)}
+                    >
+                      🔍 이름 × 사주 상세 분석 보기
+                    </button>
+                  </div>
+                );
+              })()}
 
               <div style={css.section}>
                 <div style={css.sectionTitle}>💬 이 조합은요...</div>
@@ -1621,7 +2364,7 @@ export default function GodGame() {
               <button style={css.statsBtn} onClick={() => setShowStats(true)}>
                 👥 나와 같은 유형 알아보기
               </button>
-              <div style={css.bottomTag}>#신이나를만들때 #신이{displayName}을만들때</div>
+              <div style={css.bottomTag}>#신이나를만들때 #신이{displayName}{josa을를(displayName)}만들때</div>
             </div>
           </div>
         </div>
@@ -1646,7 +2389,7 @@ const css: Record<string, CSSProperties> = {
   },
   introBadge: {
     background: 'rgba(155,127,224,0.25)', color: '#C4ADFF',
-    fontSize: 11, fontWeight: 700, padding: '4px 14px', borderRadius: 20,
+    fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 999,
     border: '1px solid rgba(155,127,224,0.4)',
   },
   introTitle: {
@@ -1661,22 +2404,22 @@ const css: Record<string, CSSProperties> = {
     alignItems: 'center', marginTop: 8,
   },
   introBubble: {
-    background: 'white', color: '#222', fontSize: 13, fontWeight: 700,
-    padding: '10px 16px', borderRadius: 14, lineHeight: 1.6,
+    background: 'white', color: '#222', fontSize: 14, fontWeight: 700,
+    padding: '8px 16px', borderRadius: 12, lineHeight: 1.6,
     border: '2px solid #222', textAlign: 'center', marginBottom: -8,
     position: 'relative', zIndex: 1,
     boxShadow: '3px 3px 0px #222',
   },
   startBtn: {
     marginTop: 16,
-    background: '#9B7FE0', border: '3px solid #2C1810', borderRadius: 16,
+    background: '#9B7FE0', border: '3px solid #2C1810', borderRadius: 12,
     padding: '16px 48px', color: '#fff', fontSize: 18, fontWeight: 900,
     cursor: 'pointer', letterSpacing: 1,
     boxShadow: '4px 4px 0px rgba(0,0,0,0.3)',
     transition: 'transform 0.1s',
   },
   introWarning: {
-    fontSize: 11, color: 'rgba(120,70,10,0.75)', textAlign: 'center',
+    fontSize: 12, color: 'rgba(120,70,10,0.75)', textAlign: 'center',
     marginTop: 8, fontStyle: 'italic',
   },
 
@@ -1696,31 +2439,31 @@ const css: Record<string, CSSProperties> = {
     background: 'rgba(8, 4, 20, 0.97)',
     border: '2px solid rgba(155,127,224,0.7)',
     borderBottom: 'none',
-    padding: '20px 24px 28px',
+    padding: '24px',
     position: 'relative',
   },
   rpgSpeaker: {
     background: 'rgba(155,127,224,0.3)', border: '1.5px solid rgba(155,127,224,0.6)',
     color: '#D4BFFF', fontSize: 13, fontWeight: 800,
-    padding: '4px 14px', borderRadius: '8px 8px 0 0',
-    display: 'inline-block', marginBottom: 14,
+    padding: '4px 12px', borderRadius: '8px 8px 0 0',
+    display: 'inline-block', marginBottom: 16,
   },
   rpgLine: {
     color: '#fff', fontSize: 16, lineHeight: 1.8, margin: '2px 0',
   },
   rpgInputRow: {
-    display: 'flex', gap: 10, marginTop: 16,
+    display: 'flex', gap: 8, marginTop: 16,
   },
   rpgInput: {
     flex: 1, background: 'rgba(255,255,255,0.08)',
-    border: '1.5px solid rgba(155,127,224,0.5)', borderRadius: 10,
+    border: '1.5px solid rgba(155,127,224,0.5)', borderRadius: 8,
     padding: '12px 14px', color: '#fff', fontSize: 16, outline: 'none',
   },
   rpgBtn: {
-    background: '#9B7FE0', border: 'none', borderRadius: 10,
-    padding: '12px 18px', color: '#fff', fontSize: 14,
+    background: '#9B7FE0', border: 'none', borderRadius: 8,
+    padding: '12px 16px', color: '#fff', fontSize: 14,
     fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap',
-    marginTop: 14, alignSelf: 'flex-end',
+    marginTop: 16, alignSelf: 'flex-end',
   },
 
   // 클릭 진행 화살표 버튼
@@ -1729,7 +2472,7 @@ const css: Record<string, CSSProperties> = {
   },
   rpgAdvanceBtn: {
     background: 'rgba(155,127,224,0.25)', border: '2px solid rgba(155,127,224,0.6)',
-    borderRadius: 10, padding: '10px 20px', color: '#D4BFFF',
+    borderRadius: 8, padding: '8px 20px', color: '#D4BFFF',
     fontSize: 18, fontWeight: 900, cursor: 'pointer',
     animation: 'pulseBadge 1.8s ease-in-out infinite',
   },
@@ -1742,17 +2485,17 @@ const css: Record<string, CSSProperties> = {
 
   // YES/NO 네비게이션 바
   yesNoBar: {
-    display: 'flex', gap: 12, marginTop: 20,
+    display: 'flex', gap: 8, marginTop: 16,
   },
   noBtn: {
     flex: 1, background: 'rgba(255,80,80,0.15)', border: '2px solid #FF6060',
     borderRadius: 12, padding: '14px 0', color: '#FF9090',
-    fontSize: 15, fontWeight: 800, cursor: 'pointer',
+    fontSize: 16, fontWeight: 800, cursor: 'pointer',
   },
   yesBtn: {
     flex: 1, background: '#9B7FE0', border: '2px solid #fff',
     borderRadius: 12, padding: '14px 0', color: '#fff',
-    fontSize: 15, fontWeight: 800, cursor: 'pointer',
+    fontSize: 16, fontWeight: 800, cursor: 'pointer',
     boxShadow: '3px 3px 0px rgba(0,0,0,0.3)',
   },
 
@@ -1762,39 +2505,39 @@ const css: Record<string, CSSProperties> = {
   },
   timeBtn: {
     display: 'flex', flexDirection: 'column' as CSSProperties['flexDirection'],
-    alignItems: 'center', gap: 2, padding: '10px 8px',
+    alignItems: 'center', gap: 4, padding: '12px 8px',
     background: 'rgba(255,255,255,0.05)', border: '1.5px solid',
     borderRadius: 12, cursor: 'pointer',
     transition: 'background 0.15s',
   },
   skipTimeBtn: {
-    marginTop: 12, width: '100%', background: 'transparent',
-    border: '1px solid rgba(255,255,255,0.2)', borderRadius: 10,
-    padding: '10px 0', color: 'rgba(255,255,255,0.35)',
-    fontSize: 13, cursor: 'pointer',
+    marginTop: 8, width: '100%', background: 'transparent',
+    border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8,
+    padding: '12px 0', color: 'rgba(255,255,255,0.35)',
+    fontSize: 14, cursor: 'pointer',
   },
 
   // 생년월일 입력 전용
   dateRow: {
-    display: 'flex', alignItems: 'center', gap: 6, marginTop: 16, flexWrap: 'wrap',
+    display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, flexWrap: 'wrap',
   },
   dateInputYear: {
     width: 80, background: 'rgba(255,255,255,0.08)',
-    border: '1.5px solid rgba(155,127,224,0.5)', borderRadius: 10,
+    border: '1.5px solid rgba(155,127,224,0.5)', borderRadius: 8,
     padding: '12px 10px', color: '#fff', fontSize: 16, outline: 'none',
     textAlign: 'center',
   },
   dateInputShort: {
     width: 52, background: 'rgba(255,255,255,0.08)',
-    border: '1.5px solid rgba(155,127,224,0.5)', borderRadius: 10,
+    border: '1.5px solid rgba(155,127,224,0.5)', borderRadius: 8,
     padding: '12px 8px', color: '#fff', fontSize: 16, outline: 'none',
     textAlign: 'center',
   },
   dateLabel: {
-    color: 'rgba(255,255,255,0.7)', fontSize: 15, fontWeight: 600,
+    color: 'rgba(255,255,255,0.7)', fontSize: 16, fontWeight: 600,
   },
 
-  dots: { display: 'flex', gap: 6, alignItems: 'center', marginTop: 12 },
+  dots: { display: 'flex', gap: 8, alignItems: 'center', marginTop: 16 },
 
   // ── 게임 ──
   container: {
@@ -1803,12 +2546,12 @@ const css: Record<string, CSSProperties> = {
     padding: '0 0 80px', position: 'relative', zIndex: 1,
   },
   header: {
-    padding: '16px 20px 6px',
-    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
+    padding: '16px 20px 8px',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
   },
   headerBadge: {
     background: 'rgba(155,127,224,0.25)', color: '#C4ADFF',
-    fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 20,
+    fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 999,
     border: '1px solid rgba(155,127,224,0.35)',
   },
   title: {
@@ -1827,8 +2570,8 @@ const css: Record<string, CSSProperties> = {
   speechBubble: {
     position: 'absolute', bottom: '100%', left: '50%',
     transform: 'translateX(-50%)',
-    background: 'white', color: '#222', fontSize: 11, fontWeight: 700,
-    padding: '8px 12px', borderRadius: 10, lineHeight: 1.5,
+    background: 'white', color: '#222', fontSize: 12, fontWeight: 700,
+    padding: '8px 12px', borderRadius: 8, lineHeight: 1.5,
     border: '2px solid #222', textAlign: 'center',
     whiteSpace: 'normal' as CSSProperties['whiteSpace'],
     zIndex: 10, boxShadow: '2px 2px 0px #222',
@@ -1881,7 +2624,7 @@ const css: Record<string, CSSProperties> = {
     background: 'rgba(255,80,80,0.22)', border: '1.5px solid #FF6060',
   },
   pourCardEmpty2: {
-    background: 'rgba(100,180,255,0.15)', border: '1.5px solid #7BB8F5',
+    background: 'rgba(91,184,255,0.08)', border: '1.5px dashed rgba(91,184,255,0.5)',
   },
   pourCardSlot: {
     background: 'rgba(255,255,255,0.04)', border: '1.5px dashed rgba(255,255,255,0.12)',
@@ -1917,7 +2660,7 @@ const css: Record<string, CSSProperties> = {
   },
   accidentBox: {
     background: 'white', border: '4px solid #222',
-    borderRadius: 20, padding: '20px 30px', textAlign: 'center',
+    borderRadius: 16, padding: '20px 30px', textAlign: 'center',
     boxShadow: '6px 6px 0px #222',
     transform: 'rotate(-3deg)',
   },
@@ -1951,71 +2694,75 @@ const css: Record<string, CSSProperties> = {
   resultHeader: { display: 'flex', justifyContent: 'center', marginBottom: 16 },
   resultHeaderBadge: {
     background: 'rgba(155,127,224,0.2)', border: '1px solid rgba(155,127,224,0.3)',
-    color: '#C4ADFF', fontSize: 11, fontWeight: 700,
-    padding: '6px 16px', borderRadius: 20, textAlign: 'center',
+    color: '#C4ADFF', fontSize: 12, fontWeight: 700,
+    padding: '6px 16px', borderRadius: 999, textAlign: 'center',
   },
   typeCard: {
     background: 'linear-gradient(135deg, rgba(155,127,224,0.28), rgba(107,181,255,0.14))',
     border: '1.5px solid rgba(155,127,224,0.35)',
-    borderRadius: 22, padding: '28px 20px', textAlign: 'center',
-    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, marginBottom: 24,
+    borderRadius: 16, padding: '28px 20px', textAlign: 'center',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, marginBottom: 24,
   },
   typeEmoji: { fontSize: 72, lineHeight: 1, marginBottom: 4, userSelect: 'none' },
   typeTitle: { fontSize: 22, fontWeight: 900, color: '#fff' },
-  typeSub: { fontSize: 13, color: 'rgba(255,255,255,0.55)' },
+  typeSub: { fontSize: 14, color: 'rgba(255,255,255,0.55)' },
 
-  section: { marginBottom: 22 },
-  sectionTitle: { fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.7)', marginBottom: 12, letterSpacing: 0.3 },
+  section: { marginBottom: 24 },
+  sectionTitle: { fontSize: 14, fontWeight: 700, color: 'rgba(255,255,255,0.7)', marginBottom: 12, letterSpacing: 0.3 },
   recapGrid: { display: 'flex', flexWrap: 'wrap', gap: 8 },
   recapChip: {
     background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)',
-    borderRadius: 12, padding: '7px 12px', display: 'flex', alignItems: 'center', gap: 6,
+    borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 6,
   },
   recapChipAcc: { background: 'rgba(255,80,80,0.12)', border: '1px solid rgba(255,80,80,0.3)' },
-  recapChipEmpty: { background: 'rgba(100,180,255,0.1)', border: '1px solid rgba(100,180,255,0.3)' },
-  recapName: { fontSize: 12, fontWeight: 600, color: '#fff' },
+  recapChipEmpty: {
+    background: 'rgba(100,180,255,0.06)',
+    border: '1px dashed rgba(100,180,255,0.35)',
+    opacity: 0.72,
+  },
+  recapName: { fontSize: 13, fontWeight: 600, color: '#fff' },
   accLabel: {
-    fontSize: 9, fontWeight: 800, color: '#FF8080',
-    background: 'rgba(255,80,80,0.2)', borderRadius: 8, padding: '1px 6px',
+    fontSize: 10, fontWeight: 800, color: '#FF8080',
+    background: 'rgba(255,80,80,0.2)', borderRadius: 999, padding: '1px 6px',
   },
   emptyLabel: {
-    fontSize: 9, fontWeight: 800, color: '#7BB8F5',
-    background: 'rgba(100,180,255,0.2)', borderRadius: 8, padding: '1px 6px',
+    fontSize: 10, fontWeight: 800, color: '#7BB8F5',
+    background: 'rgba(100,180,255,0.2)', borderRadius: 999, padding: '1px 6px',
   },
 
-  barRow: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 },
-  barLabel: { fontSize: 11, color: 'rgba(255,255,255,0.6)', width: 90, flexShrink: 0 },
+  barRow: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 },
+  barLabel: { fontSize: 12, color: 'rgba(255,255,255,0.6)', width: 90, flexShrink: 0 },
   barTrack: { flex: 1, height: 8, background: 'rgba(255,255,255,0.08)', borderRadius: 4, overflow: 'hidden' },
   barFill: { height: '100%', borderRadius: 4, transition: 'width 0.5s ease' },
-  barPct: { fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.8)', width: 42, textAlign: 'right' },
+  barPct: { fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.8)', width: 42, textAlign: 'right' },
 
-  descBox: { background: 'rgba(255,255,255,0.05)', borderRadius: 14, padding: 16, marginBottom: 12 },
+  descBox: { background: 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 16, marginBottom: 12 },
   descText: { fontSize: 14, color: 'rgba(255,255,255,0.82)', lineHeight: 1.65 },
   tagsRow: { display: 'flex', flexWrap: 'wrap', gap: 8 },
   tag: {
     background: 'rgba(155,127,224,0.18)', border: '1px solid rgba(155,127,224,0.28)',
-    borderRadius: 20, padding: '6px 12px', fontSize: 12, fontWeight: 600, color: '#D4BFFF',
+    borderRadius: 999, padding: '6px 12px', fontSize: 12, fontWeight: 600, color: '#D4BFFF',
   },
 
-  actionRow: { display: 'flex', gap: 12, marginBottom: 16 },
+  actionRow: { display: 'flex', gap: 8, marginBottom: 16 },
   shareBtn: {
-    flex: 1, background: '#9B7FE0', border: 'none', borderRadius: 14,
+    flex: 1, background: '#9B7FE0', border: 'none', borderRadius: 12,
     padding: '14px 0', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer',
   },
   resetBtn: {
-    flex: 1, background: 'transparent', border: '1.5px solid #9B7FE0', borderRadius: 14,
+    flex: 1, background: 'transparent', border: '1.5px solid #9B7FE0', borderRadius: 12,
     padding: '14px 0', color: '#C084FC', fontSize: 14, fontWeight: 700, cursor: 'pointer',
   },
-  bottomTag: { fontSize: 11, color: 'rgba(255,255,255,0.28)', textAlign: 'center' },
+  bottomTag: { fontSize: 12, color: 'rgba(255,255,255,0.28)', textAlign: 'center' },
 
   copyLinkBtn: {
     width: '100%', background: 'rgba(91,184,255,0.1)', border: '1.5px solid rgba(91,184,255,0.4)',
-    borderRadius: 14, padding: '12px 0', color: '#5BB8FF', fontSize: 14,
+    borderRadius: 12, padding: '12px 0', color: '#5BB8FF', fontSize: 14,
     fontWeight: 700, cursor: 'pointer', marginBottom: 8, marginTop: 4,
   },
   statsBtn: {
     width: '100%', background: 'rgba(155,127,224,0.12)', border: '1.5px solid rgba(155,127,224,0.4)',
-    borderRadius: 14, padding: '14px 0', color: '#C4ADFF', fontSize: 14,
+    borderRadius: 12, padding: '14px 0', color: '#C4ADFF', fontSize: 14,
     fontWeight: 700, cursor: 'pointer', marginBottom: 12, marginTop: 0,
   },
 
@@ -2031,26 +2778,26 @@ const css: Record<string, CSSProperties> = {
   statsBackBtn: {
     alignSelf: 'flex-start', background: 'transparent',
     border: '1.5px solid rgba(255,255,255,0.2)',
-    borderRadius: 10, padding: '8px 14px', color: 'rgba(255,255,255,0.55)', fontSize: 13,
-    cursor: 'pointer', marginBottom: 14,
+    borderRadius: 8, padding: '8px 14px', color: 'rgba(255,255,255,0.55)', fontSize: 14,
+    cursor: 'pointer', marginBottom: 16,
   },
   statsTitle: { fontSize: 22, fontWeight: 900, color: '#fff', margin: 0 },
-  statsSubtitle: { fontSize: 13, color: 'rgba(255,255,255,0.45)', marginTop: 4 },
+  statsSubtitle: { fontSize: 14, color: 'rgba(255,255,255,0.45)', marginTop: 4 },
 
   myTypeCard: {
     background: 'linear-gradient(135deg, rgba(155,127,224,0.28), rgba(107,181,255,0.14))',
     border: '1.5px solid rgba(155,127,224,0.5)',
-    borderRadius: 18, padding: '16px 20px',
+    borderRadius: 16, padding: '16px 20px',
     display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20,
   },
   myTypeEmoji: { fontSize: 52, lineHeight: 1 },
   myTypeTitle: { fontSize: 16, fontWeight: 900, color: '#fff', marginBottom: 4 },
-  myTypeRank: { fontSize: 13, color: '#D4BFFF', fontWeight: 600 },
+  myTypeRank: { fontSize: 14, color: '#D4BFFF', fontWeight: 600 },
 
   statsListWrapper: { display: 'flex', flexDirection: 'column', gap: 8 },
   statsRow: {
-    display: 'flex', alignItems: 'center', gap: 10,
-    background: 'rgba(255,255,255,0.04)', borderRadius: 14, padding: '12px 14px',
+    display: 'flex', alignItems: 'center', gap: 8,
+    background: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: '12px 14px',
     border: '1px solid rgba(255,255,255,0.06)',
   },
   statsRowMe: {
@@ -2059,22 +2806,22 @@ const css: Record<string, CSSProperties> = {
   statsRank: { fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.35)', width: 18, textAlign: 'center' as CSSProperties['textAlign'] },
   statsTypeEmoji: { fontSize: 26, lineHeight: 1 },
   statsInfo: { flex: 1 },
-  statsTypeName: { fontSize: 13, fontWeight: 700, color: '#fff', marginBottom: 5 },
+  statsTypeName: { fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 4 },
   statsBarWrap: { height: 6, background: 'rgba(255,255,255,0.08)', borderRadius: 3, overflow: 'hidden' },
   statsBar: { height: '100%', borderRadius: 3, transition: 'width 0.6s ease' },
   statsPct: { fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.65)', width: 36, textAlign: 'right' as CSSProperties['textAlign'] },
   statsMeBadge: {
     background: '#9B7FE0', color: '#fff', fontSize: 10, fontWeight: 800,
-    borderRadius: 10, padding: '2px 8px', whiteSpace: 'nowrap' as CSSProperties['whiteSpace'],
+    borderRadius: 999, padding: '2px 8px', whiteSpace: 'nowrap' as CSSProperties['whiteSpace'],
   },
-  statsFooter: { fontSize: 11, color: 'rgba(255,255,255,0.22)', textAlign: 'center', marginTop: 20 },
+  statsFooter: { fontSize: 12, color: 'rgba(255,255,255,0.22)', textAlign: 'center', marginTop: 20 },
 
   // ── 재료 툴팁 ──
   ingTooltip: {
     position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%',
     transform: 'translateX(-50%)',
     background: '#1A0D38', border: '1.5px solid rgba(155,127,224,0.5)',
-    borderRadius: 10, padding: '8px 12px', fontSize: 11, lineHeight: 1.6,
+    borderRadius: 8, padding: '8px 12px', fontSize: 12, lineHeight: 1.6,
     color: 'rgba(255,255,255,0.85)', whiteSpace: 'normal' as CSSProperties['whiteSpace'],
     zIndex: 50, minWidth: 200, maxWidth: 260, textAlign: 'left' as CSSProperties['textAlign'],
     boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
@@ -2093,7 +2840,7 @@ const css: Record<string, CSSProperties> = {
   // ── 궁합 버튼 ──
   compatBtn: {
     width: '100%', background: 'rgba(255,107,138,0.12)', border: '1.5px solid rgba(255,107,138,0.4)',
-    borderRadius: 14, padding: '12px 0', color: '#FF6B8A', fontSize: 14,
+    borderRadius: 12, padding: '12px 0', color: '#FF6B8A', fontSize: 14,
     fontWeight: 700, cursor: 'pointer', marginBottom: 8,
   },
 
