@@ -2080,6 +2080,12 @@ export default function GodGame() {
                 <div style={css.typeSub}>{personality.subtitle}</div>
               </div>
 
+              <div style={css.calcNotice}>
+                🔧 <b>사주 계산이 더 정확해졌어요</b> (2026.10)<br />
+                일주 기준일 오류를 고치고, 띠·월은 입춘·절기 기준으로, 태어난 시간은 12시진으로 바꿨어요.
+                예전에 해본 결과와 다르게 나올 수 있어요.
+              </div>
+
               <div style={css.section}>
                 <div style={css.sectionTitle}>📦 신이 넣은 재료</div>
                 <p style={{ ...css.sectionTitle, fontSize: 12, color: 'rgba(255,255,255,0.35)', fontWeight: 400, marginTop: -8, marginBottom: 8 } as CSSProperties}>
@@ -2676,6 +2682,11 @@ const css: Record<string, CSSProperties> = {
     background: 'rgba(155,127,224,0.2)', border: '1px solid rgba(155,127,224,0.3)',
     color: '#C4ADFF', fontSize: 12, fontWeight: 700,
     padding: '6px 16px', borderRadius: 999, textAlign: 'center',
+  },
+  calcNotice: {
+    marginTop: 12, padding: '10px 14px', borderRadius: 12,
+    background: 'rgba(245,168,60,0.10)', border: '1px solid rgba(245,168,60,0.35)',
+    color: 'rgba(255,255,255,0.75)', fontSize: 12, lineHeight: 1.6,
   },
   typeCard: {
     background: 'linear-gradient(135deg, rgba(155,127,224,0.28), rgba(107,181,255,0.14))',
