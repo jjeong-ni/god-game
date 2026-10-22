@@ -1,6 +1,7 @@
 'use client';
 import { useState, useCallback, useRef, useEffect, type CSSProperties } from 'react';
 import { GodIdle, GodPanic, GodDazed } from './god-illustrations';
+import { computeSaju, STEM_OH, BRANCH_OH } from '@/lib/saju';
 
 const MAX = 5;
 
@@ -415,34 +416,7 @@ const ZODIAC = [
   { name: '양',     emoji: '🐑' },  // year%12=11 未(土/earth)
 ] as const;
 
-// 년도 끝자리(year%10) → 년간(年干) 오행
-// 0=庚(金), 1=辛(金), 2=壬(水), 3=癸(水), 4=甲(木), 5=乙(木), 6=丙(火), 7=丁(火), 8=戊(土), 9=己(土)
-const YEAR_STEM_OH: Ohaeng[] = ['metal','metal','water','water','wood','wood','fire','fire','earth','earth'];
-
-// year%12 → 년지(年支) 오행 (위 ZODIAC 순서와 일치)
-const YEAR_BRANCH_OH: Ohaeng[] = ['metal','metal','earth','water','water','earth','wood','wood','earth','fire','fire','earth'];
-
-// 월(1~12) → 월지(月支) 오행 (절기 기준 근사)
-// 1=丑(土), 2=寅(木), 3=卯(木), 4=辰(土), 5=巳(火), 6=午(火), 7=未(土), 8=申(金), 9=酉(金), 10=戌(土), 11=亥(水), 12=子(水)
-const MONTH_OH: Ohaeng[] = ['earth','wood','wood','earth','fire','fire','earth','metal','metal','earth','water','water'];
-
-// 율리우스 적일수(Julian Day Number) — 정확한 일간(日干) 계산용
-function julianDayNumber(year: number, month: number, day: number): number {
-  const a = Math.floor((14 - month) / 12);
-  const y = year + 4800 - a;
-  const m = month + 12 * a - 3;
-  return day + Math.floor((153 * m + 2) / 5) + 365 * y + Math.floor(y / 4) - Math.floor(y / 100) + Math.floor(y / 400) - 32045;
-}
-// 기준: 2023-01-01 = 甲子日 (60갑자 위치 0번)
-const JDN_GABJIA = 2459946;
-
-// 일간(日干) 오행 — 60갑자 천간 기준 정확 계산
-// 甲乙=木, 丙丁=火, 戊己=土, 庚辛=金, 壬癸=水
-function getDayOhaeng(year: number, month: number, day: number): Ohaeng {
-  const pos = ((julianDayNumber(year, month, day) - JDN_GABJIA) % 60 + 60) % 60;
-  const DAY_STEM_OH: Ohaeng[] = ['wood','wood','fire','fire','earth','earth','metal','metal','water','water'];
-  return DAY_STEM_OH[pos % 10];
-}
+// 년·월·일·시주 계산은 lib/saju.ts (입춘·절기 기준, 일주는 JDN 표준 공식)
 
 // 재료 → 오행 배속(配屬) — 명리학적 특성에 따라
 const ING_OHAENG: Record<string, Ohaeng> = {
@@ -598,24 +572,27 @@ function seededRandom(seed: number) {
   };
 }
 
-function selectBySaju(year: number, month: number, day: number, hourOh: Ohaeng | null = null): {
+function selectBySaju(year: number, month: number, day: number, hourBranch: number | null = null): {
   ings: Ingredient[];
   zodiac: { name: string; emoji: string };
+  zodiacIdx: number;
   dominantOh: Ohaeng;
   ohScores: Record<Ohaeng, number>;
 } {
-  const zodiacIdx = ((year % 12) + 12) % 12;
+  const saju = computeSaju(year, month, day, hourBranch);
+  // 띠는 입춘 기준 사주 년도로 (1월~입춘 전 출생은 전년도 띠)
+  const zodiacIdx = ((saju.sajuYear % 12) + 12) % 12;
   const zodiac = ZODIAC[zodiacIdx];
   const seed = year * 10000 + month * 100 + day;
   const rand = seededRandom(seed);
 
   // 사주 4~5기둥 오행 집계: 년간, 년지, 월지, 일간, (시지)
   const ohScores: Record<Ohaeng, number> = { wood: 0, fire: 0, earth: 0, metal: 0, water: 0 };
-  ohScores[YEAR_STEM_OH[((year % 10) + 10) % 10]]++;
-  ohScores[YEAR_BRANCH_OH[zodiacIdx]]++;
-  ohScores[MONTH_OH[month - 1]]++;
-  ohScores[getDayOhaeng(year, month, day)]++;
-  if (hourOh) ohScores[hourOh]++;
+  ohScores[STEM_OH[saju.year.stem]]++;
+  ohScores[BRANCH_OH[saju.year.branch]]++;
+  ohScores[BRANCH_OH[saju.month.branch]]++;
+  ohScores[STEM_OH[saju.day.stem]]++;
+  if (saju.hour) ohScores[BRANCH_OH[saju.hour.branch]]++;
 
   // 오행 순위 (동점이면 알파벳 순으로 안정적 정렬)
   const ohRanked = (Object.entries(ohScores) as [Ohaeng, number][])
@@ -644,7 +621,7 @@ function selectBySaju(year: number, month: number, day: number, hourOh: Ohaeng |
   const remaining = (INGREDIENTS as readonly Ingredient[]).filter(i => !seen.has(i.id));
   const ings = [...core, ...shufflePick(remaining, MAX - core.length)].slice(0, MAX);
 
-  return { ings, zodiac: { name: zodiac.name, emoji: zodiac.emoji }, dominantOh, ohScores };
+  return { ings, zodiac: { name: zodiac.name, emoji: zodiac.emoji }, zodiacIdx, dominantOh, ohScores };
 }
 
 // ── 한자 데이터베이스 (주요 이름 글자) ──────────────────────
@@ -901,14 +878,20 @@ function buildPouringSequence(base: Ingredient[]): { ing: Ingredient; isAccident
   return seq;
 }
 
-// 시주(時柱) — 태어난 시간대별 지지(地支) 오행
-const TIME_SLOTS: { label: string; range: string; emoji: string; oh: Ohaeng }[] = [
-  { label: '자정·새벽', range: '밤 11시 ~ 새벽 3시',  emoji: '🌙', oh: 'water' },
-  { label: '새벽·아침', range: '새벽 3시 ~ 오전 7시', emoji: '🌅', oh: 'wood'  },
-  { label: '오전',       range: '오전 7시 ~ 오전 11시',emoji: '☀️', oh: 'fire'  },
-  { label: '낮',         range: '오전 11시 ~ 오후 3시',emoji: '🌞', oh: 'fire'  },
-  { label: '오후',       range: '오후 3시 ~ 오후 7시', emoji: '🌤️', oh: 'metal' },
-  { label: '저녁·밤',   range: '오후 7시 ~ 밤 11시',  emoji: '🌃', oh: 'earth' },
+// 시주(時柱) — 12시진. branch = 시지 인덱스(0=子). 경계는 한국 관례(30분 늦춤)
+const TIME_SLOTS: { label: string; range: string; emoji: string; branch: number }[] = [
+  { label: '자시 子', range: '23:30 ~ 01:30', emoji: '🌙', branch: 0 },
+  { label: '축시 丑', range: '01:30 ~ 03:30', emoji: '🌌', branch: 1 },
+  { label: '인시 寅', range: '03:30 ~ 05:30', emoji: '🌄', branch: 2 },
+  { label: '묘시 卯', range: '05:30 ~ 07:30', emoji: '🌅', branch: 3 },
+  { label: '진시 辰', range: '07:30 ~ 09:30', emoji: '🍳', branch: 4 },
+  { label: '사시 巳', range: '09:30 ~ 11:30', emoji: '☀️', branch: 5 },
+  { label: '오시 午', range: '11:30 ~ 13:30', emoji: '🌞', branch: 6 },
+  { label: '미시 未', range: '13:30 ~ 15:30', emoji: '🍵', branch: 7 },
+  { label: '신시 申', range: '15:30 ~ 17:30', emoji: '🌤️', branch: 8 },
+  { label: '유시 酉', range: '17:30 ~ 19:30', emoji: '🌇', branch: 9 },
+  { label: '술시 戌', range: '19:30 ~ 21:30', emoji: '🌃', branch: 10 },
+  { label: '해시 亥', range: '21:30 ~ 23:30', emoji: '🌠', branch: 11 },
 ];
 
 const PARTICLE_EMOJIS = ['✨', '💥', '🌟', '⚡', '🔥', '💨', '🫧', '💫'];
@@ -998,7 +981,7 @@ export default function GodGame() {
   const [showResult, setShowResult] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [dominantOh, setDominantOh] = useState<Ohaeng | null>(null);
-  const [hourOh, setHourOh] = useState<Ohaeng | null>(null);
+  const [zodiacIdx, setZodiacIdx] = useState(0);
   const [ohScores, setOhScores] = useState<Record<Ohaeng, number> | null>(null);
   const [tooltipIngId, setTooltipIngId] = useState<string | null>(null);
   const [showCompat, setShowCompat] = useState(false);
@@ -1059,8 +1042,7 @@ export default function GodGame() {
   useEffect(() => {
     if (!showResult || hasRecordedRef.current || !dominantOh) return;
     hasRecordedRef.current = true;
-    const zi = ((parseInt(yearInput) % 12) + 12) % 12;
-    const pt = getPersonalityType(zi, dominantOh);
+    const pt = getPersonalityType(zodiacIdx, dominantOh);
     recordResult(pt.id);
     setStatsLoading(true);
     fetchLiveStats().then(data => {
@@ -1097,13 +1079,13 @@ export default function GodGame() {
   }, [yearInput, monthInput, dayInput]);
 
   // 시주 선택 → 사주 계산 → step5
-  const handleTimeSubmit = useCallback((oh: Ohaeng | null) => {
+  const handleTimeSubmit = useCallback((hourBranch: number | null) => {
     const y = parseInt(yearInput);
     const m = parseInt(monthInput);
     const d = parseInt(dayInput);
-    setHourOh(oh);
-    const { ings, zodiac, dominantOh: doh, ohScores: scores } = selectBySaju(y, m, d, oh);
+    const { ings, zodiac, zodiacIdx: zi, dominantOh: doh, ohScores: scores } = selectBySaju(y, m, d, hourBranch);
     setZodiacInfo(zodiac);
+    setZodiacIdx(zi);
     setSaJuIngs(ings);
     setDominantOh(doh);
     setOhScores(scores);
@@ -1125,7 +1107,7 @@ export default function GodGame() {
     setZodiacInfo(null);
     setSaJuIngs([]);
     setDominantOh(null);
-    setHourOh(null);
+    setZodiacIdx(0);
     setNamingStep(1);
   }, []);
 
@@ -1234,7 +1216,7 @@ export default function GodGame() {
     setParticles([]); setShowResult(false); setShowStats(false); setBouncingId(null);
     setAccidentals(new Set()); setEmptyBottles(new Set()); setPourIsDrop(false);
     hasRecordedRef.current = false;
-    setDominantOh(null); setHourOh(null); setOhScores(null);
+    setDominantOh(null); setZodiacIdx(0); setOhScores(null);
     setTooltipIngId(null); setShowCompat(false);
     setCompatYear(''); setCompatMonth(''); setCompatDay('');
     setCompatResult(null); setCompatZodiac(null);
@@ -1245,8 +1227,7 @@ export default function GodGame() {
   }, [clearAllTimers]);
 
   const handleShare = useCallback(async () => {
-    const zi = ((parseInt(yearInput) % 12) + 12) % 12;
-    const pt = dominantOh ? getPersonalityType(zi, dominantOh) : PERSONALITY_TYPES[0];
+    const pt = dominantOh ? getPersonalityType(zodiacIdx, dominantOh) : PERSONALITY_TYPES[0];
     try {
       const blob = await generateShareImage(userName || '나', pt, selected, accidentals, emptyBottles, selectedWeights);
       const file = new File([blob], '신이나를만들때.png', { type: 'image/png' });
@@ -1264,7 +1245,7 @@ export default function GodGame() {
         setTimeout(() => URL.revokeObjectURL(url), 5000);
       }
     } catch { /* cancel */ }
-  }, [selected, userName, accidentals, emptyBottles]);
+  }, [selected, userName, accidentals, emptyBottles, selectedWeights, dominantOh, zodiacIdx]);
 
   const handleCompatCalc = useCallback(() => {
     if (!dominantOh) return;
@@ -1291,8 +1272,7 @@ export default function GodGame() {
   }, [yearInput, monthInput, dayInput, userName]);
 
   const fillPct = (selected.length / MAX) * 100;
-  const _zodiacIdx = yearInput ? ((parseInt(yearInput) % 12) + 12) % 12 : 0;
-  const personality = showResult && dominantOh ? getPersonalityType(_zodiacIdx, dominantOh) : null;
+  const personality = showResult && dominantOh ? getPersonalityType(zodiacIdx, dominantOh) : null;
   const breakdown = personality ? getCategoryBreakdown(selected, selectedWeights) : [];
   const liquidColor = fillPct <= 20 ? '#7BB8F5' : fillPct <= 40 ? '#5CB85C'
     : fillPct <= 60 ? '#9B7FE0' : fillPct <= 80 ? '#F5A83C' : '#FF4040';
@@ -1527,13 +1507,13 @@ export default function GodGame() {
               <div style={css.timeGrid}>
                 {TIME_SLOTS.map(slot => (
                   <button
-                    key={slot.oh + slot.label}
+                    key={slot.branch}
                     style={{
                       ...css.timeBtn,
-                      borderColor: OHAENG_COLOR[slot.oh],
-                      color: OHAENG_COLOR[slot.oh],
+                      borderColor: OHAENG_COLOR[BRANCH_OH[slot.branch]],
+                      color: OHAENG_COLOR[BRANCH_OH[slot.branch]],
                     }}
-                    onClick={() => handleTimeSubmit(slot.oh)}
+                    onClick={() => handleTimeSubmit(slot.branch)}
                   >
                     <span style={{ fontSize: 22 }}>{slot.emoji}</span>
                     <span style={{ fontWeight: 800, fontSize: 13 }}>{slot.label}</span>
@@ -2100,6 +2080,12 @@ export default function GodGame() {
                 <div style={css.typeSub}>{personality.subtitle}</div>
               </div>
 
+              <div style={css.calcNotice}>
+                🔧 <b>사주 계산이 더 정확해졌어요</b> (2026.10)<br />
+                일주 기준일 오류를 고치고, 띠·월은 입춘·절기 기준으로, 태어난 시간은 12시진으로 바꿨어요.
+                예전에 해본 결과와 다르게 나올 수 있어요.
+              </div>
+
               <div style={css.section}>
                 <div style={css.sectionTitle}>📦 신이 넣은 재료</div>
                 <p style={{ ...css.sectionTitle, fontSize: 12, color: 'rgba(255,255,255,0.35)', fontWeight: 400, marginTop: -8, marginBottom: 8 } as CSSProperties}>
@@ -2501,7 +2487,7 @@ const css: Record<string, CSSProperties> = {
 
   // 시주 선택
   timeGrid: {
-    display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 14,
+    display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginTop: 14,
   },
   timeBtn: {
     display: 'flex', flexDirection: 'column' as CSSProperties['flexDirection'],
@@ -2696,6 +2682,11 @@ const css: Record<string, CSSProperties> = {
     background: 'rgba(155,127,224,0.2)', border: '1px solid rgba(155,127,224,0.3)',
     color: '#C4ADFF', fontSize: 12, fontWeight: 700,
     padding: '6px 16px', borderRadius: 999, textAlign: 'center',
+  },
+  calcNotice: {
+    marginTop: 12, padding: '10px 14px', borderRadius: 12,
+    background: 'rgba(245,168,60,0.10)', border: '1px solid rgba(245,168,60,0.35)',
+    color: 'rgba(255,255,255,0.75)', fontSize: 12, lineHeight: 1.6,
   },
   typeCard: {
     background: 'linear-gradient(135deg, rgba(155,127,224,0.28), rgba(107,181,255,0.14))',
